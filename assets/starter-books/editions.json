@@ -1,0 +1,80 @@
+[
+  {
+    "id": "7337",
+    "title": "道德经",
+    "source": "https://www.gutenberg.org/ebooks/7337",
+    "download": "https://www.gutenberg.org/ebooks/7337.txt.utf-8",
+    "bytes": 41533,
+    "sha256": "e162e8f8e3a6cee107748b2cb363e8b35c16d58ea9465ce06dd708ada9765033",
+    "language": "zh",
+    "author": "老子",
+    "epubBytes": 71399,
+    "epubSha256": "7fab2b6ccb810af13f9009dffa57d8407aa1f996aa072a42d8a8743922250b1e",
+    "sections": 82
+  },
+  {
+    "id": "52323",
+    "title": "唐诗三百首",
+    "source": "https://www.gutenberg.org/ebooks/52323",
+    "download": "https://www.gutenberg.org/ebooks/52323.txt.utf-8",
+    "bytes": 107712,
+    "sha256": "cd30fdc57ec8ba55949b69badf56bcd66472c10efb4729cbf4230ba3e3025c85",
+    "language": "zh",
+    "author": "蘅塘退士 编",
+    "epubBytes": 86410,
+    "epubSha256": "aebf2ee6cd9b08bfd5b2daae5db45f6d0abfd742ae8532d787e95d297414a0f1",
+    "sections": 17
+  },
+  {
+    "id": "2680",
+    "title": "Meditations",
+    "source": "https://www.gutenberg.org/ebooks/2680",
+    "download": "https://www.gutenberg.org/ebooks/2680.txt.utf-8",
+    "bytes": 425304,
+    "sha256": "6977474f82a39dd88a4af31a59504821658174d33c177732c54357e4d680b96c",
+    "language": "en",
+    "author": "Marcus Aurelius",
+    "epubBytes": 207504,
+    "epubSha256": "0a09292558c227795a67cdb3f45f6a15abb68285c30bbeb315ffa7228b9f4750",
+    "sections": 30
+  },
+  {
+    "id": "43",
+    "title": "Jekyll and Hyde",
+    "source": "https://www.gutenberg.org/ebooks/43",
+    "download": "https://www.gutenberg.org/ebooks/43.txt.utf-8",
+    "bytes": 163495,
+    "sha256": "b43448a88391591f9cf82b25553df00faf47a2752a873185fcdd1156eebdb990",
+    "language": "en",
+    "author": "Robert Louis Stevenson",
+    "epubBytes": 89333,
+    "epubSha256": "0dfe72839e804f52f691d09960a0993d631deb3ce081673c31011bfbc47e3df9",
+    "sections": 11
+  },
+  {
+    "id": "11",
+    "title": "Alice in Wonderland",
+    "source": "https://www.gutenberg.org/ebooks/11",
+    "download": "https://www.gutenberg.org/ebooks/11.txt.utf-8",
+    "bytes": 174311,
+    "sha256": "01b38ea4c710a84bc18d0bd41271a5a1a92b94e97b2812f4dece97d4a694725e",
+    "language": "en",
+    "author": "Lewis Carroll",
+    "epubBytes": 99073,
+    "epubSha256": "3226ca4a12692a761400e98387352a21c9e16420ca0e4184609b4556c096713a",
+    "sections": 14
+  },
+  {
+    "id": "24047",
+    "title": "世说新语",
+    "source": "https://www.gutenberg.org/ebooks/24047",
+    "download": "https://www.gutenberg.org/ebooks/24047.txt.utf-8",
+    "bytes": 264504,
+    "sha256": "ca4497d57f79e61caf20db769be2159528b1808d36bd1400e4f4714ccf960cab",
+    "language": "zh",
+    "author": "刘义庆",
+    "epubBytes": 172303,
+    "epubSha256": "8f38f1b4d2fbf78efe9af68147afa7be8c048553ee35a882c20558e8a5a4676f",
+    "sections": 38
+  }
+]
