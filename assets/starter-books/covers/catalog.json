@@ -1,0 +1,74 @@
+[
+  {
+    "id": "7337",
+    "source": "https://commons.wikimedia.org/wiki/File:DaoDeJingWangBi.jpg",
+    "download": "https://upload.wikimedia.org/wikipedia/commons/f/fc/DaoDeJingWangBi.jpg",
+    "credit": "Wang Bi edition, Japan 1770; scan via Wikimedia Commons",
+    "license": "Public domain (PD-old; PDM)",
+    "licenseUrl": "https://commons.wikimedia.org/wiki/Commons:Public_domain",
+    "processing": "Resized to 320 px width; optimized progressive JPEG quality 68; no crop or retouching",
+    "bytes": 22071,
+    "sha256": "3606a0927a2b3215a6ea1c73ff56bd1da91ea2995759e5d00a227aa22d90ba59",
+    "retrieved": "2026-09-09"
+  },
+  {
+    "id": "52323",
+    "source": "https://commons.wikimedia.org/wiki/File:NTUL-9910002735_唐詩三百首註疏_六卷_v.1.pdf",
+    "download": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5d/NTUL-9910002735_%E5%94%90%E8%A9%A9%E4%B8%89%E7%99%BE%E9%A6%96%E8%A8%BB%E7%96%8F_%E5%85%AD%E5%8D%B7_v.1.pdf/page1-500px-NTUL-9910002735_%E5%94%90%E8%A9%A9%E4%B8%89%E7%99%BE%E9%A6%96%E8%A8%BB%E7%96%8F_%E5%85%AD%E5%8D%B7_v.1.pdf.jpg",
+    "credit": "National Taiwan University Library; Zhang Fu Ji edition, catalog dated 1917",
+    "license": "Public domain scan (PD-scan; PD-old-70; PDM)",
+    "licenseUrl": "https://commons.wikimedia.org/wiki/Commons:Public_domain",
+    "processing": "Resized to 320 px width; optimized progressive JPEG quality 68; no crop or retouching",
+    "bytes": 19865,
+    "sha256": "5e5dfea02dc03d1a649021d0b994d47f038521045860a118e8bdde5f80f21795",
+    "retrieved": "2026-09-09"
+  },
+  {
+    "id": "24047",
+    "source": "https://commons.wikimedia.org/wiki/File:NLC511-023031404011125-31511_世說新語_新式標點.pdf",
+    "download": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/33/NLC511-023031404011125-31511_%E4%B8%96%E8%AA%AA%E6%96%B0%E8%AA%9E_%E6%96%B0%E5%BC%8F%E6%A8%99%E9%BB%9E.pdf/page1-500px-NLC511-023031404011125-31511_%E4%B8%96%E8%AA%AA%E6%96%B0%E8%AA%9E_%E6%96%B0%E5%BC%8F%E6%A8%99%E9%BB%9E.pdf.jpg",
+    "credit": "National Library of China; Sao Ye Shan Fang edition; cover calligraphy credited to Zhang Yan",
+    "license": "Public domain scan (PD-scan; PD-China)",
+    "licenseUrl": "https://commons.wikimedia.org/wiki/Commons:Public_domain",
+    "processing": "Resized to 320 px width; optimized progressive JPEG quality 68; no crop or retouching",
+    "bytes": 17525,
+    "sha256": "0006242dcd6e5767d7c76221ed6cbd4bf105680551d46d02afd1f8f6d7081359",
+    "retrieved": "2026-09-09"
+  },
+  {
+    "id": "2680",
+    "source": "https://standardebooks.org/ebooks/marcus-aurelius/meditations/george-long",
+    "download": "https://standardebooks.org/images/covers/marcus-aurelius_meditations_george-long/463d624aab8bb716f04517f2a7e58ba99847d045/cover.jpg",
+    "credit": "Standard Ebooks cover edition",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "processing": "Original published 242 × 363 px cover JPEG",
+    "bytes": 22261,
+    "sha256": "0352e566c976aefa56701a8e8899908d090279cbfeeb450553b98dc923586f49",
+    "retrieved": "2026-09-09"
+  },
+  {
+    "id": "43",
+    "source": "https://standardebooks.org/ebooks/robert-louis-stevenson/the-strange-case-of-dr-jekyll-and-mr-hyde",
+    "download": "https://standardebooks.org/images/covers/robert-louis-stevenson_the-strange-case-of-dr-jekyll-and-mr-hyde/272fad7d23f75883b253e3d7aaf868c79ae572af/cover.jpg",
+    "credit": "Standard Ebooks cover edition",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "processing": "Original published 242 × 363 px cover JPEG",
+    "bytes": 15066,
+    "sha256": "e0a02a057c478fa84d390f352dc415741e414db813cfac35d2a281ffc1c5294f",
+    "retrieved": "2026-09-09"
+  },
+  {
+    "id": "11",
+    "source": "https://standardebooks.org/ebooks/lewis-carroll/alices-adventures-in-wonderland/john-tenniel",
+    "download": "https://standardebooks.org/images/covers/lewis-carroll_alices-adventures-in-wonderland_john-tenniel/6646aa82efefe0c673971c9df73c778c6f87d383/cover.jpg",
+    "credit": "Standard Ebooks cover edition",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "processing": "Original published 242 × 363 px cover JPEG",
+    "bytes": 24664,
+    "sha256": "85e9e5782ae9b2b4360da125bb321348add6c21e362ffc181f9ed76c5d9991a4",
+    "retrieved": "2026-09-09"
+  }
+]

@@ -1,0 +1,75 @@
+export const READER_THEMES = {
+  auto: {
+    label: "match-obsidian-2",
+    bg: "var(--background-primary)",
+    text: "var(--text-normal)",
+    ui: "var(--background-secondary)",
+    border: "var(--background-modifier-border)",
+    accent: "var(--interactive-accent)",
+    muted: "var(--text-muted)",
+  },
+  paper: {
+    label: "paper-white",
+    bg: "#f8f6f0",
+    text: "#24231f",
+    ui: "#efebe2",
+    border: "#dcd5c8",
+    accent: "#4f6758",
+    muted: "#746f66",
+  },
+  warm: {
+    label: "warm-paper",
+    bg: "#f3ebdd",
+    text: "#30291f",
+    ui: "#e9decb",
+    border: "#d5c5ab",
+    accent: "#755d3c",
+    muted: "#776b59",
+  },
+  celadon: {
+    label: "celadon",
+    bg: "#eaf0e8",
+    text: "#243029",
+    ui: "#dfe8dd",
+    border: "#c6d3c4",
+    accent: "#4f6d5a",
+    muted: "#667269",
+  },
+  moon: {
+    label: "moon-white",
+    bg: "#eef2f3",
+    text: "#263238",
+    ui: "#e2e8ea",
+    border: "#c9d2d5",
+    accent: "#516c78",
+    muted: "#5f6d74",
+  },
+  night: {
+    label: "night",
+    bg: "#181a1b",
+    text: "#d9d7d1",
+    ui: "#222526",
+    border: "#383c3d",
+    accent: "#91ab9a",
+    muted: "#9a9a94",
+  },
+  eink: {
+    label: "e-ink-2",
+    bg: "#ffffff",
+    text: "#000000",
+    ui: "#ffffff",
+    border: "#000000",
+    accent: "#000000",
+    muted: "#444444",
+  },
+};
+
+export const READER_THEME_CHOICES = ["auto", "paper", "warm", "celadon", "moon", "night"];
+
+export function migrateReaderTheme(value) {
+  if (value === "light") return "paper";
+  if (value === "sepia") return "warm";
+  if (value === "dark") return "night";
+  if (value === "eink") return "moon";
+  return READER_THEMES[value] ? value : "auto";
+}
