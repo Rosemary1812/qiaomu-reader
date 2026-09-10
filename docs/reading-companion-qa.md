@@ -9,7 +9,7 @@
 
 ## Local verification
 
-231 automated tests pass. ESLint (zero warnings), nine-language validation (1292 keys), standard build and asset verification, and community-profile build pass.
+232 automated tests pass. ESLint (zero warnings), nine-language validation (1292 keys), standard build and asset verification, and community-profile build pass.
 
 Isolated Obsidian 1.13.7 tests:
 

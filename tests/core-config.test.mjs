@@ -785,7 +785,7 @@ test("desktop AI chat keeps per-book threads and structured document or selectio
   assert.match(source, /event\.key === "Escape"/);
   assert.doesNotMatch(source, /createEl\("button", \{ cls: "qiaomu-reader-ai-context-refresh"/);
   assert.match(source, /remove-context-for-this-message/);
-  assert.match(source, /trayButton\("sparkles", "ai-reading"/);
+  assert.match(source, /trayButton\(null, "ai-reading"/);
   assert.match(source, /readerAiPanelContext\(this\)/);
   assert.doesNotMatch(source, /qiaomu-reader-pdf-note-btn|createNoteFromPdfPage|pdfNoteBtn/);
   assert.doesNotMatch(source, /bar\.createDiv\(\{ cls: "qiaomu-reader-ai-composer-hint"/);

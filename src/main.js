@@ -9885,9 +9885,8 @@ const ReaderView = class extends ItemView {
     });
     createPdfZoomControls(tray, this);
     buildReaderTimerButton(tray, this);
-    // Tray buttons share one shape: icon, tooltip, click handler. Focus mode is
-    // the odd one out (Obsidian icon plus a pressed state); AI mounts only when
-    // a usable provider is configured.
+    // Tray buttons share an icon, accessible label and click handler.
+    // The companion entry stays available before service setup.
     const trayButton = (icon, label, onClick, spec = {}) => {
       const btn = tray.createEl("button", { cls: spec.cls || "qiaomu-reader-ibtn", attr: spec.attr || { type: "button" } });
       if (icon) svgIcon(btn, icon);
@@ -9898,9 +9897,9 @@ const ReaderView = class extends ItemView {
       return btn;
     };
     trayButton("reading-note", "the-book-note", () => openOrCreateBookNoteBeside(this.plugin, this.file));
-    this.aiBtn = trayButton("sparkles", "ai-reading", () => {
+    this.aiBtn = trayButton(null, "ai-reading", () => {
       void this.plugin.openAiChat(readerAiPanelContext(this));
-    });
+    }, { lucide: "sparkles" });
     this.focusBtn = trayButton(null, "focus-reading", () => setReadingFocus(this, !this._focusRestore), {
       cls: "qiaomu-reader-ibtn qiaomu-reader-focus-toggle",
       attr: { type: "button", "aria-pressed": "false" },

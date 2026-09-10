@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
+import { JSDOM } from 'jsdom';
 import { highlightBacklink } from '../src/highlight-navigation.js';
 const source = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 class TFile { constructor(path) { this.path = path; this.extension = path.split('.').at(-1); this.basename = path.split('/').at(-1).replace(/\.[^.]+$/, ''); } }
@@ -72,4 +73,20 @@ test('a note opened after translation started never becomes the current-note tar
   const h=harness();h.modal.noteTarget=null;
   await assert.rejects(h.api.saveTranslationNote(h.modal,'current','译文'));
   assert.equal(h.editor.getValue(),'Unsaved personal draft');
+});
+
+
+test('reader companion entry renders an icon and opens setup before configuration',()=>{
+  const dom=new JSDOM('<div id="tray"></div>'), document=dom.window.document;
+  const tray=document.querySelector('#tray');
+  tray.createEl=(tag,spec)=>{const el=document.createElement(tag);el.className=spec.cls;for(const [key,value] of Object.entries(spec.attr))el.setAttribute(key,value);tray.append(el);return el;};
+  let opened=0;
+  const view={plugin:{openAiChat:()=>opened++}};
+  const helper=source.slice(source.indexOf('    const trayButton ='),source.indexOf('    trayButton("reading-note"'));
+  const entry=source.slice(source.indexOf('    this.aiBtn = trayButton('),source.indexOf('    this.focusBtn = trayButton('));
+  vm.runInNewContext(`(function(){${helper}${entry}}).call(view)`,{view,tray,svgIcon:()=>{},setIcon:(el,name)=>{assert.equal(name,'sparkles');el.append(document.createElementNS('http://www.w3.org/2000/svg','svg'));},qiaomuReaderTranslate:x=>x,readerAiPanelContext:()=>({})});
+  assert.ok(view.aiBtn.querySelector('svg'));
+  assert.equal(view.aiBtn.hidden,false);
+  view.aiBtn.click();assert.equal(opened,1);
+  dom.window.close();
 });
