@@ -1461,6 +1461,18 @@ button.qiaomu-reader-find-item.qiaomu-reader-toc-active { background: var(--back
 .view-content.qiaomu-reader-view.qiaomu-reader-eink .qiaomu-reader-lib-strip { background: #000; }
 .view-content.qiaomu-reader-view.qiaomu-reader-eink .qiaomu-reader-lib-card { animation: none; }
 
+/* Companion setup shares the sidebar surface and scrolls independently. */
+.qiaomu-reader-companion-setup { overflow-y: auto; min-height: 0; padding: 0 4px 16px; }
+.qiaomu-reader-companion-setup > p { color: var(--text-muted); font-size: var(--font-ui-small); }
+.qiaomu-reader-companion-setup .setting-item { flex-wrap: wrap; gap: 8px; }
+.qiaomu-reader-companion-setup .setting-item-control { flex: 1 1 100%; justify-content: flex-start; min-width: 0; }
+.qiaomu-reader-companion-setup select, .qiaomu-reader-companion-setup input { max-width: 100%; }
+.qiaomu-reader-companion-start { width: 100%; margin-top: 12px; }
+.qiaomu-reader-translation-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.qiaomu-reader-translation-save { display: flex; gap: 2px; }
+.qiaomu-reader-translation-save svg { width: 16px; height: 16px; }
+.qiaomu-reader-translation-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-muted); font-size: var(--font-ui-small); margin-top: 12px; }
+
 /* Bundled reading subset: SIL OFL 1.1
 Copyright (c) 2023, Zhejiang JadeFoci Techonology Co. LTD
 (https://www.jadefoci.com/)

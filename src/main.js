@@ -11,7 +11,7 @@ import { HL_COLOR_SWATCHES } from "./highlight-colors.js";
  * party libraries (pdf.js, epub.js, JSZip) come from npm and are bundled by
  * esbuild at build time — see esbuild.config.mjs for what gets stubbed out.
  */
-import { AbstractInputSuggest, Component, FuzzySuggestModal, ItemView, MarkdownRenderer, Menu, Modal, Notice, Platform, Plugin, PluginSettingTab, Scope, SecretComponent, Setting, TFile, TFolder, normalizePath, requestUrl, setIcon } from "obsidian";
+import { AbstractInputSuggest, Component, FuzzySuggestModal, ItemView, MarkdownView, MarkdownRenderer, Menu, Modal, Notice, Platform, Plugin, PluginSettingTab, Scope, SecretComponent, Setting, TFile, TFolder, normalizePath, requestUrl, setIcon } from "obsidian";
 import { EpubEngine, ENGINE_EXTENSIONS, coverFromBytes } from "./reader-engine.js";
 import { coverPalette, migrateCoverCache } from "./book-cover.js";
 // One place decides which extensions the reader opens: the rendering engine
@@ -37,7 +37,7 @@ import { PDF_CMAP_OPTIONS } from "./pdf-cmaps.js";
 import { PDF_AI_CONTEXT_MAX_CHARS, READER_BLOCK_SELECTOR, packPdfDocumentContext, pdfPageKind, pdfPageShell, pdfPageTextForAi } from "./pdf-page-mode.js";
 import { PDF_ZOOM_DEFAULT, PDF_ZOOM_MAX, PDF_ZOOM_MIN, clampPdfZoom, pdfZoomFromWheel, pdfZoomPercent, pdfZoomShortcut, stepPdfZoom } from "./pdf-zoom.js";
 import { appendReadingNoteExcerpts, isReadingHighlightsHeading, migrateAndReplaceReadingHighlights, replaceManagedReadingHighlights } from "./reading-note.js";
-import { cliAcpSupport, cliMeta, cliReasoningEfforts, disposeCliAiSessions, effectiveCliEffort, installCliAcp, probeCliAcp, probeCliAi, resolveAcpPath, resolveCliPath, runCliAi, warmCliAiSession } from "./ai-cli.js";
+import { cliAcpSupport, cliMeta, cliReasoningEfforts, disposeCliAiSessions, effectiveCliEffort, installCliAcp, probeCliAcp, probeCliAi, resolveAcpPath, resolveCliPath, runCliAi } from "./ai-cli.js";
 import { QIAOMU_READER_EN } from "./i18n-en.js";
 import { QIAOMU_READER_ZH_CN } from "./i18n-zh.js";
 import { translateUiText } from "./i18n-runtime.js";
@@ -110,6 +110,7 @@ const DEFAULT_READER_SESSION = {
   figuresShownByDefault: false, einkMode: false,
 };
 const DEFAULT_AI = {
+  aiCompanionVisible: null,
   aiEnabled: false, aiNeedsVerification: false, aiProvider: "",
   // The API key itself lives in Obsidian SecretStorage. data.json keeps only
   // the selected secret ID so vault syncing never copies the key.
@@ -1448,6 +1449,8 @@ const QiaomuBookReader = class extends Plugin {
   }
   async onload() { // state first (loadAll), then every Obsidian integration, registered in the original order
     await this.loadAll(); await this._attachAiDraftStore();
+    this._unloading = false;
+    this._watchCompanionAndNotes();
     this._registerReaderViews();
     this._registerBookProtocol();
     this._registerReaderExtensions();
@@ -1480,6 +1483,35 @@ const QiaomuBookReader = class extends Plugin {
       void this._repairCfiBacklinks().catch((error) => console.warn("Qiaomu Reader: backlink upgrade failed", error));
     });
     this._scheduleFirstRunFlow();
+  }
+  _watchCompanionAndNotes() {
+    const remember = (leaf) => {
+      if (leaf?.view instanceof MarkdownView && leaf.view.file?.extension === "md") this._lastNoteLeaf = leaf;
+    };
+    remember(this.app.workspace.activeLeaf);
+    this.registerEvent(this.app.workspace.on("active-leaf-change", remember));
+    this.registerEvent(this.app.workspace.on("layout-change", () => {
+      if (this._unloading || this._openingCompanion || !this._companionWasVisible) return;
+      const leaf = this.app.workspace.getLeavesOfType(AI_CHAT_VIEW_TYPE)[0];
+      if (leaf && this.app.workspace.rightSplit?.collapsed) {
+        this._companionWasVisible = false;
+        void this._rememberCompanion(false);
+      }
+    }));
+  }
+  async _rememberCompanion(visible) {
+    this.settings.aiCompanionVisible = visible;
+    await this._saveLocalData();
+  }
+  async _showCompanionForBook(view) {
+    if (this._unloading || this._openingCompanion || view._closed || !view.bookHtml || view._openingBook
+      || this.app.isMobile || view.containerEl.ownerDocument.defaultView.innerWidth < 1000
+      || this.settings.aiCompanionVisible === false || this.app.workspace.activeLeaf !== view.leaf) return;
+    if (this._companionWasVisible && !this.app.workspace.rightSplit?.collapsed) return;
+    this._openingCompanion = true;
+    try { await this.openAiChat(readerAiPanelContext(view), { automatic: true }); }
+    catch (error) { console.warn("Qiaomu Reader: companion could not open", error); }
+    finally { this._openingCompanion = false; }
   }
   _watchQuietUiDocument(doc) {
     if (doc?.body && this._quietUiDocuments && !this._quietUiDocuments.has(doc)) {
@@ -1587,8 +1619,6 @@ const QiaomuBookReader = class extends Plugin {
       {
         id: "open-ai-chat", name: qiaomuReaderTranslate("open-ai-reading-sidebar"),
         checkCallback: (probe) => {
-          const state = aiSetupState(this);
-          if (!(state.ready && state.enabled)) return false;
           const reader = this.app.workspace.getActiveViewOfType(ReaderView);
           const target = reader?.bookHtml ? reader : (this._openReaderModal?.bookHtml ? this._openReaderModal : null);
           if (target && !readerSupportsAiContext(target)) return false;
@@ -1689,6 +1719,7 @@ const QiaomuBookReader = class extends Plugin {
     this.app.workspace.onLayoutReady(onReady);
   }
   onunload() {
+    this._unloading = true;
     this._aiQuoteJumpController?.abort();
     disposeReaderFonts(this);
     disposeCliAiSessions();
@@ -1713,10 +1744,11 @@ const QiaomuBookReader = class extends Plugin {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
     const leaf = leaves.find((item) => item.view.file?.path === file.path) || leaves[0] || this.app.workspace.getLeaf("tab");
     await leaf.setViewState({ type: VIEW_TYPE, state: { path: file.path }, active: true });
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
+    void this._showCompanionForBook(leaf.view);
     return leaf.view;
   }
-  async openAiChat(context = null) {
+  async openAiChat(context = null, options = {}) {
     let target = null;
     if (!context) {
       const view = this.app.workspace.getActiveViewOfType(ReaderView);
@@ -1724,6 +1756,11 @@ const QiaomuBookReader = class extends Plugin {
       if (target) context = readerAiPanelContext(target);
     }
     if (this.app.isMobile) {
+      const state = aiSetupState(this);
+      if (!(state.ready && state.enabled)) {
+        openPluginAiSettings(this.app, this, () => void this.openAiChat(context));
+        return;
+      }
       if (context && context.text) {
         new AiExplainModal(this.app, this, context).open();
       } else if (context?.unavailable) {
@@ -1740,12 +1777,15 @@ const QiaomuBookReader = class extends Plugin {
       return;
     }
     if (!leaf.view || leaf.view.getViewType() !== AI_CHAT_VIEW_TYPE) {
-      await leaf.setViewState({ type: AI_CHAT_VIEW_TYPE, active: true });
+      await leaf.setViewState({ type: AI_CHAT_VIEW_TYPE, active: !options.automatic });
     }
     if (context && leaf.view instanceof AiChatView) {
-      leaf.view.setContext(context);
+      leaf.view.setContext(context, { focusInput: !options.automatic, silent: true });
     }
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
+    this._companionWasVisible = true;
+    await this._rememberCompanion(true);
+    if (options.automatic && context?.readerView?.leaf) this.app.workspace.setActiveLeaf(context.readerView.leaf, { focus: false });
   }
   async openLibrary(inNewWindow = false) {
     const existing = this.app.workspace.getLeavesOfType(LIB_VIEW_TYPE);
@@ -3658,7 +3698,7 @@ function syncReaderAiCapability(view) {
   const supported = readerSupportsAiContext(view);
   view.aiBtn.hidden = !supported;
   view.aiBtn.disabled = !supported;
-  view.aiBtn.setAttribute("aria-label", qiaomuReaderTranslate(readerIsPdf(view) ? "chat-with-ai-about-the-full-pdf" : "chat-with-ai-about-the-current-page"));
+  view.aiBtn.setAttribute("aria-label", qiaomuReaderTranslate("ai-reading"));
 }
 function readerIsPdf(view) {
   const extension = String(view?.file?.extension || view?.ext || "").toLowerCase();
@@ -4088,12 +4128,88 @@ async function aiTestConnection(plugin) {
     acp: cliAcpSupport(cfg.id).supported,
   };
 }
+// Capture a specific open Markdown leaf before the popup takes focus. Never
+// infer a destination from whichever tab happens to be active after translation.
+function currentTranslationNote(plugin, target = null) {
+  const leaf = target?.leaf || plugin._lastNoteLeaf;
+  const file = target?.file || leaf?.view?.file;
+  if (!(leaf?.view instanceof MarkdownView) || !(file instanceof TFile)
+    || file.extension !== "md" || leaf.view.file !== file
+    || !plugin.app.workspace.getLeavesOfType("markdown").includes(leaf)
+    || plugin.app.vault.getAbstractFileByPath(file.path) !== file) return null;
+  return { leaf, file };
+}
+function dailyNoteProvider(app) {
+  // Obsidian exposes no public Daily Notes API. Keep this optional adapter
+  // guarded; the core plugin creates its own note with its format and template.
+  const daily = app.internalPlugins?.plugins?.["daily-notes"];
+  return daily?.enabled && typeof daily.instance?.getDailyNote === "function" ? daily.instance : null;
+}
+function translationNoteBlock(plugin, bookFile, source, translation) {
+  const original = source.text.trim().replace(/\r?\n/g, "\n> ");
+  const link = highlightBacklink(plugin.app.vault.getName(), bookFile.path, { ...source, id: undefined });
+  const attribution = plugin.app.fileManager.generateMarkdownLink(bookFile, "");
+  return `> ${original}\n\n${translation.trim()}\n\n— ${attribution}${link ? ` [↩](${link})` : ""}`;
+}
+function saveTranslationNote(modal, destination, translation) {
+  const { plugin, app } = modal;
+  // Serialize target creation and appends, including two independent popups.
+  const operation = async () => {
+    const previous = destination === "new" ? modal.savedTargets.get(destination) : null;
+    if (previous && app.vault.getAbstractFileByPath(previous.path) === previous) return previous;
+    const block = translationNoteBlock(plugin, modal.bookFile, modal.source, translation);
+    let file;
+    if (destination === "current") {
+      const target = modal.noteTarget && currentTranslationNote(plugin, modal.noteTarget);
+      if (!target) throw new Error("The selected note is no longer open");
+      const editor = target.leaf.view.editor;
+      if (editor) {
+        const text = editor.getValue();
+        if (!text.includes(block)) editor.replaceRange(`${text.endsWith("\n\n") ? "" : text.endsWith("\n") ? "\n" : "\n\n"}${block}\n`, editor.offsetToPos(text.length));
+        return target.file;
+      }
+      file = target.file;
+    } else if (destination === "daily") {
+      const daily = dailyNoteProvider(app);
+      if (!daily) throw new Error("Enable Daily Notes first");
+      file = await daily.getDailyNote();
+    } else if (destination === "book") {
+      file = resolveBookNote(app, bookNoteLinkFor(plugin, modal.bookFile));
+      if (!file) {
+        const folder = bookNotesFolderPath(app) || notesFolderPath(app) || "";
+        const base = sanitizeNoteTitle(modal.bookFile.basename);
+        let name = base, suffix = 2;
+        while (app.vault.getAbstractFileByPath(qiaomuReaderPath(`${folder}/${name}.md`))) name = `${base} ${suffix++}`;
+        file = await plugin.createBookNote(modal.bookFile, name, folder);
+      }
+    } else if (destination === "new") {
+      const folderChoice = plugin.settings.notesNextToBook ? modal.bookFile.parent?.path || null : null;
+      const filename = firstFreeNoteName(app, sanitizeNoteTitle(suggestNoteTitle(modal.text)), folderChoice);
+      const folder = await resolveNotesFolder(app, folderChoice);
+      return createTemplatedNote(app, modal.bookFile, folder, filename, folderChoice, block);
+    } else throw new Error("Unknown translation destination");
+    if (!(file instanceof TFile) || file.extension !== "md" || isUnsafeReadingNote(app, file)) throw new Error("No writable note target");
+    const open = app.workspace.getLeavesOfType("markdown").find(leaf => leaf.view.file === file && leaf.view.editor);
+    if (open) {
+      const editor = open.view.editor, text = editor.getValue();
+      if (!text.includes(block)) editor.replaceRange(`\n\n${block}\n`, editor.offsetToPos(text.length));
+    } else await app.vault.process(file, text => text.includes(block) ? text : `${text.trimEnd()}\n\n${block}\n`);
+    return file;
+  };
+  const pending = (plugin._translationSaveChain || Promise.resolve()).catch(() => {}).then(operation);
+  plugin._translationSaveChain = pending;
+  return pending;
+}
+
 const TranslateModal = class extends Modal {
-  constructor(app, plugin, text, bookFile) {
+  constructor(app, plugin, text, bookFile, source = {}) {
     super(app);
     this.plugin = plugin;
     this.text = text;
     this.bookFile = bookFile;
+    this.source = { ...source, text };
+    this.noteTarget = currentTranslationNote(plugin);
+    this.savedTargets = new Map();
   }
   async onOpen() {
     const { contentEl: root } = this;
@@ -4140,19 +4256,53 @@ const TranslateModal = class extends Modal {
     return qiaomuReaderTranslate("could-not-reach-the-translator-it-looks-like-there-is-no-interne");
   }
   _footerActions(root, tr) {
-    new Setting(root)
-      .addButton((b) => b.setButtonText(qiaomuReaderTranslate("copy-translation")).onClick(async () => {
-        const copied = await copyToClipboard(tr);
-        new Notice(copied ? qiaomuReaderTranslate("copied") : qiaomuReaderTranslate("could-not-copy"));
-      }))
-      .addButton((b) => b.setButtonText(qiaomuReaderTranslate("to-a-note")).setCta().onClick(async () => {
-        const extra = qiaomuReaderTranslate("translation-0", tr);
-        await createNoteFromSelection(this.app, this.plugin, this.text, this.bookFile, { open: false, silent: true, extra });
-        new Notice(qiaomuReaderTranslate("note-created"));
-        this.close();
-      }));
+    if (!tr || this._closed) return;
+    const foot = root.createDiv("qiaomu-reader-translation-actions");
+    const copy = foot.createEl("button", { text: qiaomuReaderTranslate("copy-translation") });
+    copy.addEventListener("click", async () => {
+      const copied = await copyToClipboard(tr);
+      new Notice(qiaomuReaderTranslate(copied ? "copied" : "could-not-copy"));
+    });
+    const group = foot.createDiv("qiaomu-reader-translation-save");
+    const save = group.createEl("button", { cls: "mod-cta", text: qiaomuReaderTranslate("translation-save-book") });
+    save.addEventListener("click", () => void this._saveTranslation("book", tr));
+    const more = group.createEl("button", { attr: { "aria-label": qiaomuReaderTranslate("translation-save-to"), "aria-haspopup": "menu" } });
+    setIcon(more, "chevron-down");
+    more.addEventListener("click", () => {
+      const menu = new Menu().setUseNativeMenu(false);
+      const targets = [
+        ["book", "book-open", qiaomuReaderTranslate("translation-save-book"), true],
+        ["current", "file-text", this.noteTarget ? qiaomuReaderTranslate("translation-current-note", this.noteTarget.file.basename) : qiaomuReaderTranslate("translation-no-current-note"), !!(this.noteTarget && currentTranslationNote(this.plugin, this.noteTarget))],
+        ["new", "file-plus", qiaomuReaderTranslate("create-new-note"), true],
+        ["daily", "calendar", qiaomuReaderTranslate("translation-daily-note"), !!dailyNoteProvider(this.app)],
+      ];
+      for (const [id, icon, label, available] of targets) menu.addItem(item => item.setTitle(label).setIcon(icon).setDisabled(!available || this._saving).onClick(() => void this._saveTranslation(id, tr)));
+      if (!dailyNoteProvider(this.app)) menu.addItem(item => item.setTitle(qiaomuReaderTranslate("translation-enable-daily")).setIcon("settings").onClick(() => { this.app.setting.open(); this.app.setting.openTabById("core-plugins"); }));
+      const rect = more.getBoundingClientRect();
+      menu.showAtPosition({ x: rect.left, y: rect.bottom });
+    });
+    this.saveButtons = [save, more];
+    this.saveStatus = root.createDiv({ cls: "qiaomu-reader-translation-status", attr: { role: "status" } });
   }
-  onClose() { this.contentEl.empty(); }
+  async _saveTranslation(destination, translation) {
+    if (this._saving) return;
+    this._saving = true;
+    this.saveButtons?.forEach(button => button.disabled = true);
+    try {
+      const file = await saveTranslationNote(this, destination, translation);
+      if (!file) throw new Error("No note was saved");
+      this.savedTargets.set(destination, file);
+      if (this._closed) return;
+      this.saveStatus.empty();
+      this.saveStatus.createSpan({ text: qiaomuReaderTranslate("translation-saved", file.basename) });
+      this.saveStatus.createEl("button", { text: qiaomuReaderTranslate("translation-open-note") }).addEventListener("click", () => void openNoteBesideBook(this.app, this.plugin, file));
+    } catch (error) {
+      console.error("Qiaomu Reader: translation save failed", error);
+      if (!this._closed) { this.saveStatus.setAttribute("role", "alert"); this.saveStatus.setText(qiaomuReaderTranslate("translation-save-failed")); }
+    } finally { this._saving = false; this.saveButtons?.forEach(button => button.disabled = false); }
+  }
+  onClose() { this._closed = true; this.contentEl.empty(); }
+
 };
 // The book does not lay out instantly; the veil (qiaomu-reader-booting) hides the half-ready page
 function qiaomuReaderShowVeil(view, text) {
@@ -4661,7 +4811,7 @@ function selectionActions(view) {
       const cur = view._currentHl(), file = view.file;
       if (!cur || !file || !view.plugin.settings.translateEnabled) return;
       clearReaderSelection(view); view._hideHlPopup();
-      new TranslateModal(view.app, view.plugin, cur.text, file).open();
+      new TranslateModal(view.app, view.plugin, cur.text, file, { ...cur }).open();
     }],
     copy: ["qiaomu-reader-hl-copy", "copy", "copy", () => void copySelectionText(view)],
   };
@@ -4712,11 +4862,6 @@ function openAiSelectionChat(view) {
     page: cur.page ? qiaomuReaderTranslate("page-0", cur.page) : "",
     text: cur.text, bookFile: view.file, readerView: view };
   clearReaderSelection(view); view._hideHlPopup();
-  const ai = aiSetupState(view.plugin);
-  if (!ai.ready || !ai.enabled) {
-    openPluginAiSettings(view.app, view.plugin, () => void view.plugin.openAiChat(context));
-    return;
-  }
   void view.plugin.openAiChat(context);
 }
 async function copySelectionText(view) {
@@ -4857,7 +5002,7 @@ function renderHighlightPanel(p, owner, opts) {
 function renderAiHeadMeta(host, chat) {
   if (!chat.book) return;
   const meta = host.createDiv("qiaomu-reader-ai-head-meta");
-  meta.createDiv({ cls: "qiaomu-reader-ai-book", text: chat.book });
+  meta.createDiv({ cls: "qiaomu-reader-ai-book", text: chat.bookFile?.basename || chat.book });
 }
 
 const AI_MARKDOWN_RENDER_INTERVAL_MS = 50;
@@ -5763,6 +5908,37 @@ const AiChatView = class extends ItemView {
       iconButton("history", qiaomuReaderTranslate("chat-history"), () => new AiChatHistoryModal(this.app, this).open()),
     ];
     this._settingsButton(actions);
+    iconButton("x", qiaomuReaderTranslate("close"), () => {
+      void this.plugin._rememberCompanion(false);
+      this.leaf.detach();
+    });
+  }
+  _renderSetup() {
+    this._rememberDraft();
+    const c = this.contentEl;
+    c.empty();
+    this._renderHead(c);
+    const host = c.createDiv("qiaomu-reader-companion-setup");
+    host.createEl("p", { text: qiaomuReaderTranslate("companion-setup-intro") });
+    const form = host.createDiv();
+    const draw = () => {
+      form.empty();
+      this.plugin.settingsTab._groupAi(form, draw, { enableOnSuccess: true, onReady: () => this._renderConversation() });
+      if (!aiConfig(this.plugin).provider) return;
+      const start = form.createEl("button", { cls: "mod-cta qiaomu-reader-companion-start", text: qiaomuReaderTranslate("ai-start-using") });
+      start.addEventListener("click", async () => {
+        start.disabled = true;
+        try {
+          await testAndEnableAi(this.plugin, text => start.setText(text));
+          if (this.contentEl.isConnected) this._renderConversation();
+        } catch (error) {
+          const feedback = form.querySelector(".qiaomu-reader-ai-setup-feedback");
+          if (feedback) { feedback.setAttribute("role", "alert"); feedback.setText(aiConnectionErrorMessage(error)); }
+          for (const details of form.querySelectorAll("details[data-ai-advanced], details[data-ai-connection]")) details.open = true;
+        } finally { start.disabled = false; start.setText(qiaomuReaderTranslate("ai-start-using")); }
+      });
+    };
+    draw();
   }
   _renderWaiting() {
     const c = this.contentEl;
@@ -5810,6 +5986,7 @@ const AiChatView = class extends ItemView {
       && nextContext?.text === this.pendingContext?.text
       && nextContext?.page === this.pendingContext?.page;
     if (sameContext) {
+      if (!this.inputEl?.isConnected && aiSetupState(this.plugin).enabled) this._renderConversation(options);
       if (options.focusInput !== false) qiaomuReaderAutoFocus(this.inputEl);
       return;
     }
@@ -5992,6 +6169,8 @@ const AiChatView = class extends ItemView {
     });
   }
   _renderConversation(options = {}) {
+    const state = aiSetupState(this.plugin);
+    if (!(state.ready && state.enabled)) { this._renderSetup(); return; }
     const c = this.contentEl;
     c.empty();
     if (!this.pendingContext && !this.turns.length && this.readerView && this.contextMode !== "none") {
@@ -6019,22 +6198,10 @@ const AiChatView = class extends ItemView {
     this.canCancel = true;
     bindAiSlashPrompts(slashMenu, input, this);
     this.inputController = bindReaderAiComposer(this, input, send, footer);
+    input.value = this.drafts.get(this.bookFile?.path) || "";
+    this.inputController.refresh();
     if (options.focusInput !== false) qiaomuReaderAutoFocus(input);
     qiaomuReaderBlurOnTapOutside(c, input);
-    this._warmSession();
-  }
-  _warmSession() {
-    const cfg = aiConfig(this.plugin);
-    if (!cliAcpSupport(cfg.id).supported || !this.aiSessionKey || !Platform.isDesktopApp) return;
-    // Copilot feels immediate because its ACP process/session already exists by
-    // the time the user sends. Do the same as soon as the book chat is visible.
-    void warmCliAiSession(cfg.id, {
-      binaryPath: cfg.cliPath,
-      acpPath: cfg.acpPath,
-      model: cfg.model,
-      effort: cfg.effort,
-      sessionKey: this.aiSessionKey,
-    }).catch(() => { /* the send path reports actionable setup/auth errors */ });
   }
   _renderPendingContext(host) {
     const context = normalizeAiTurnContext(this.pendingContext);
@@ -6083,6 +6250,8 @@ const AiChatView = class extends ItemView {
   // thread; closing the leaf remains an explicit Obsidian action.
   close() {}
   async onClose() {
+    this.plugin._companionWasVisible = false;
+    if (!this.plugin._unloading) await this.plugin._rememberCompanion(false);
     if (this.abortController) this.abortController.abort();
     this._rememberDraft();
     await this.plugin.aiDraftStore?.flush();
@@ -6099,8 +6268,6 @@ for (const method of ["_setSending", "_buildEmpty", "_scroll", "_consumePendingC
 function syncOpenAiSelectionContext(view, range) {
   const text = view?._pendingSel?.text?.trim();
   if (!text || !view.file) return;
-  const state = aiSetupState(view.plugin);
-  if (!(state.ready && state.enabled)) return;
   const leaf = view.app.workspace.getLeavesOfType(AI_CHAT_VIEW_TYPE)[0];
   if (!(leaf?.view instanceof AiChatView)) return;
   if (!view.engine && range) paintAiSource(view, range);
@@ -6113,8 +6280,6 @@ function syncOpenAiSelectionContext(view, range) {
 
 function syncOpenAiReaderContext(view) {
   if (!view?.file || !view?.bookHtml) return;
-  const state = aiSetupState(view.plugin);
-  if (!(state.ready && state.enabled)) return;
   const leaf = view.app.workspace.getLeavesOfType(AI_CHAT_VIEW_TYPE)[0];
   if (!(leaf?.view instanceof AiChatView)) return;
   const context = readerAiPanelContext(view);
@@ -9307,6 +9472,7 @@ const ReaderView = class extends ItemView {
     if (leaf === this.leaf) {
       this._repaginateWhenWidthStale();
       syncOpenAiReaderContext(this);
+      void this.plugin._showCompanionForBook(this);
       return;
     }
     this._hideHlPopup(); const isAiChat = leaf?.view?.getViewType?.() === AI_CHAT_VIEW_TYPE;
@@ -9344,6 +9510,7 @@ const ReaderView = class extends ItemView {
       if (this._openingBook === loadToken) {
         this._openingBook = null;
         settleReader(this);
+        void this.plugin._showCompanionForBook(this);
         if (this._layoutWidthStale()) void this.repaginate();
       }
     }
@@ -9432,6 +9599,7 @@ const ReaderView = class extends ItemView {
     this._pdfOutline = result.outline;
   }
   _finishBookOpen(file) {
+    syncReaderAiCapability(this);
     this.buildSettPanel(); this._maybePromptBookNote(file);
     this._sessionSec = 0; this._running = false;
     const todaySeconds = this.plugin.getTodaySeconds();
@@ -9717,9 +9885,8 @@ const ReaderView = class extends ItemView {
     });
     createPdfZoomControls(tray, this);
     buildReaderTimerButton(tray, this);
-    // Tray buttons share one shape: icon, tooltip, click handler. Focus mode is
-    // the odd one out (Obsidian icon plus a pressed state); AI mounts only when
-    // a usable provider is configured.
+    // Tray buttons share an icon, accessible label and click handler.
+    // The companion entry stays available before service setup.
     const trayButton = (icon, label, onClick, spec = {}) => {
       const btn = tray.createEl("button", { cls: spec.cls || "qiaomu-reader-ibtn", attr: spec.attr || { type: "button" } });
       if (icon) svgIcon(btn, icon);
@@ -9730,17 +9897,9 @@ const ReaderView = class extends ItemView {
       return btn;
     };
     trayButton("reading-note", "the-book-note", () => openOrCreateBookNoteBeside(this.plugin, this.file));
-    const ai = aiSetupState(this.plugin);
-    if (ai.ready && ai.enabled) {
-      this.aiBtn = trayButton("wand-sparkles", "chat-with-ai-about-the-full-pdf", () => {
-        const ctx = readerAiPanelContext(this);
-        if (!ctx || ctx.unavailable) {
-          new Notice(qiaomuReaderTranslate("this-pdf-has-no-usable-text-layer-you-can-still-read-the-origina"));
-          return;
-        }
-        this.plugin.openAiChat(ctx);
-      }, { hidden: true });
-    }
+    this.aiBtn = trayButton(null, "ai-reading", () => {
+      void this.plugin.openAiChat(readerAiPanelContext(this));
+    }, { lucide: "sparkles" });
     this.focusBtn = trayButton(null, "focus-reading", () => setReadingFocus(this, !this._focusRestore), {
       cls: "qiaomu-reader-ibtn qiaomu-reader-focus-toggle",
       attr: { type: "button", "aria-pressed": "false" },
