@@ -167,7 +167,7 @@ test("engine searches createDocument sections, returns readable excerpts and can
   // Stub layout only: exercise the bundled engine and real Foliate matcher
   // against the dependency's createDocument section contract.
   View.prototype.open = async function () { this.book = { sections, metadata: { language: "zh" } }; };
-  View.prototype.init = async function () {};
+  View.prototype.init = async function () { this.lastLocation = { cfi: "test" }; this.renderer = { getContents: () => [{ doc: dom.window.document }] }; };
   View.prototype.close = function () {};
   View.prototype.getCFI = (index, range) => `epubcfi(${index}/${range.startOffset})`;
   View.prototype.addAnnotation = async ({ value }) => annotations.add(value);
@@ -224,7 +224,7 @@ test("closing the engine releases the book once, including cancellation during a
   const View = dom.window.customElements.get(JSON.parse(elements.define.__QBR_ENGINE_VIEW_TAG__));
   let disposed = 0, release;
   View.prototype.open = async function () { this.book = { destroy: () => disposed++ }; };
-  View.prototype.init = async function () {};
+  View.prototype.init = async function () { this.lastLocation = { cfi: "test" }; this.renderer = { getContents: () => [{ doc: dom.window.document }] }; };
   View.prototype.close = function () {};
   const engine = new EpubEngine(dom.window.document.querySelector("main"));
   await engine.open(new Uint8Array(), "test.mobi");
@@ -301,5 +301,41 @@ test("iframe pointer events reveal chrome and use host tap zones without hijacki
   send(doc.querySelector("a"), "click");
   view.plugin.settings.readMode = "scroll"; send(doc.querySelector("p"), "click");
   assert.deepEqual(calls, ["chrome", "chrome", "next"]);
+  dom.window.close();
+});
+
+
+test("initial navigation recovers stale CFIs and hidden-tab no-ops without accepting a blank reader", async () => {
+  const dom = new JSDOM("<body></body>", { runScripts: "outside-only" });
+  const { restoreEngineLocation } = evaluate(dom, await bundle(foliateElements(root)));
+  const scenarios = [
+    { first: "ok", calls: ["cfi"] },
+    { first: "noop", calls: ["cfi", "fraction"] },
+    { first: "throw", calls: ["cfi", "fraction"] },
+    { first: "noop", fraction: "noop", calls: ["cfi", "fraction", "start"] },
+    { first: "noop", noFraction: true, calls: ["cfi", "start"] },
+    { first: "noop", fraction: "noop", start: "noop", calls: ["cfi", "fraction", "start"], fails: true },
+  ];
+  for (const scenario of scenarios) {
+    const calls = []; let doc = null;
+    const view = { renderer: { getContents: () => doc ? [{ doc }] : [] } };
+    const navigate = (name, result) => { calls.push(name); if (result === "throw") throw new Error("stale CFI"); if (result === "ok") { doc = dom.window.document; view.lastLocation = { cfi: "restored" }; } };
+    view.init = async ({ lastLocation }) => { assert.equal(lastLocation, "stale"); navigate("cfi", scenario.first); };
+    view.goToFraction = async f => { assert.equal(f, .4); navigate("fraction", scenario.fraction || "ok"); };
+    view.goToTextStart = async () => navigate("start", scenario.start || "ok");
+    const pending = restoreEngineLocation(view, { initialCfi: "stale", initialFraction: scenario.noFraction ? undefined : .4 });
+    if (scenario.fails) await assert.rejects(pending, /Could not load/); else await pending;
+    assert.deepEqual(calls, scenario.calls);
+  }
+  const legacy = {
+    renderer: { getContents: () => [{ doc: dom.window.document }] },
+    async init({ lastLocation }) { assert.equal(lastLocation.fraction, .015); this.lastLocation = { cfi: "legacy-restored" }; },
+    async goToTextStart() { assert.fail("legacy progress should not reset to the beginning"); },
+  };
+  await restoreEngineLocation(legacy, { initialFraction: .015 });
+  let current = true, fallback = false;
+  const closed = { init: async () => { current = false; }, goToTextStart: async () => { fallback = true; } };
+  await assert.rejects(restoreEngineLocation(closed, {}, () => current), { name: "AbortError" });
+  assert.equal(fallback, false);
   dom.window.close();
 });

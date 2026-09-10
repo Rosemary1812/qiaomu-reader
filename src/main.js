@@ -9642,7 +9642,7 @@ const ReaderView = class extends ItemView {
       },
     });
     try {
-      await engine.open(result.bytes, result.name, { initialCfi: saved?.cfi || undefined });
+      await engine.open(result.bytes, result.name, { initialCfi: saved?.cfi || undefined, initialFraction: saved?.pct });
     } catch (e) {
       engine.destroy();
       if (this.engine === engine) this.engine = null;
@@ -11530,7 +11530,7 @@ const ReaderModal = class extends Modal {
       },
     });
     try {
-      await engine.open(result.bytes, result.name, { initialCfi: saved?.cfi || undefined });
+      await engine.open(result.bytes, result.name, { initialCfi: saved?.cfi || undefined, initialFraction: saved?.pct });
     } catch (e) {
       engine.destroy();
       if (this.engine === engine) this.engine = null;
