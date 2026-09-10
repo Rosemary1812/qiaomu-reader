@@ -243,6 +243,7 @@ test("opening AI and activating its right dock preserve focus without restoring 
     setReadingFocus() { throw new Error("Opening AI must not exit focus"); }
   });
   plugin.app = reader.app;
+  plugin._rememberCompanion = async () => {};
   await plugin.openAiChat({ readerView: reader, text: "current page" });
   assert.ok(reader._focusRestore);
   assert.equal(workspace.leftSplit.collapsed, true);

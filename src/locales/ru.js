@@ -1290,5 +1290,15 @@ export default {
   "kaiti": "Кайти",
   "interface-language-updated-reopen-existing-book-tabs-and-chats-t": "Язык интерфейса обновлён. Открытые страницы книг и диалоги применят новый язык после повторного открытия.",
   "download-more-fonts": "Скачать другие шрифты",
-  "this-format-can-currently-only-be-read-on-desktop": "Этот формат пока читается только на компьютере."
+  "this-format-can-currently-only-be-read-on-desktop": "Этот формат пока читается только на компьютере.",
+  "translation-open-note": "Открыть заметку",
+  "companion-setup-intro": "Выберите ИИ-сервис для совместного чтения этой книги.",
+  "translation-save-book": "Сохранить в заметку книги",
+  "translation-save-to": "Сохранить в…",
+  "translation-current-note": "Текущая заметка · {0}",
+  "translation-no-current-note": "Текущая заметка · не открыта",
+  "translation-daily-note": "Сегодняшняя заметка",
+  "translation-enable-daily": "Включить ежедневные заметки…",
+  "translation-saved": "Сохранено в {0}",
+  "translation-save-failed": "Не удалось сохранить. Проверьте заметку назначения и повторите попытку.",
 };

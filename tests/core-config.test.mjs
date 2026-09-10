@@ -682,8 +682,7 @@ test("selection popup keeps primary actions compact and moves note tools into Mo
   const start = source.indexOf("function selectionActions");
   const end = source.indexOf("const AiExplainModal", start);
   const popupSource = source.slice(start, end);
-  assert.match(source, /const ai = aiSetupState\(view\.plugin\)/); // selection AI entry moved into the shared popup helper
-  assert.match(source, /ai\.ready && ai\.enabled/); // selection AI gate rides the shared popup helper
+  assert.match(popupSource, /void view\.plugin\.openAiChat\(context\)/); // Unconfigured users reach inline setup.
   assert.match(popupSource, /ai: \["qiaomu-reader-hl-ai", "sparkles"/); // AI entry in the button descriptor table
   assert.match(popupSource, /kind: "selection"[\s\S]*text: cur\.text[\s\S]*bookFile: view\.file/);
   assert.match(popupSource, /button\(row, "qiaomu-reader-hl-menu", "ellipsis"/); // More entry in the button table
@@ -724,7 +723,7 @@ test("desktop AI chat keeps per-book threads and structured document or selectio
   assert.match(source, /const AI_CHAT_VIEW_TYPE = "qiaomu-book-reader-ai-chat"/);
   assert.match(source, /\[AI_CHAT_VIEW_TYPE, AiChatView\]/); // view registrations are table-driven in _registerReaderViews
   assert.match(source, /registerView\(viewType, \(leaf\) => new ViewClass\(leaf, this\)\)/);
-  assert.match(source, /getRightLeaf\(false\) \|\| this\.app\.workspace\.getRightLeaf\(true\)/);
+  assert.match(source, /getRightLeaf\(false\)/);
   assert.match(source, /const AiChatView = class extends ItemView/);
   assert.match(source, /setContext\(value(?:, options = \{\})?\)/);
   assert.match(source, /find\(\(item\) => item\.bookPath && item\.bookPath === bookPath\)/);
@@ -786,8 +785,8 @@ test("desktop AI chat keeps per-book threads and structured document or selectio
   assert.match(source, /event\.key === "Escape"/);
   assert.doesNotMatch(source, /createEl\("button", \{ cls: "qiaomu-reader-ai-context-refresh"/);
   assert.match(source, /remove-context-for-this-message/);
-  assert.match(source, /chat-with-ai-about-the-current-page/);
-  assert.match(source, /chat-with-ai-about-the-full-pdf/);
+  assert.match(source, /trayButton\("sparkles", "ai-reading"/);
+  assert.match(source, /readerAiPanelContext\(this\)/);
   assert.doesNotMatch(source, /qiaomu-reader-pdf-note-btn|createNoteFromPdfPage|pdfNoteBtn/);
   assert.doesNotMatch(source, /bar\.createDiv\(\{ cls: "qiaomu-reader-ai-composer-hint"/);
   assert.match(source, /\[\["book", qiaomuReaderTranslate\("this-book"\)\], \["all", qiaomuReaderTranslate\("all-2"\)\]\]/);
@@ -844,7 +843,7 @@ test("AI settings explain and verify provider-specific ACP instead of a generic 
   const source = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
   assert.match(source, /cliAcpSupport\(s\.aiProvider\)/);
   assert.match(source, /probeCliAcp\(s\.aiProvider/);
-  assert.match(source, /warmCliAiSession\(cfg\.id/);
+  assert.doesNotMatch(source, /warmCliAiSession\(cfg\.id/); // Opening a book must not initialize a model session.
   assert.match(source, /this-cli-includes-acp/);
   assert.match(source, /this-cli-requires-the-separate-0-adapter/);
   assert.match(source, /acp-adapter-path/);
