@@ -48,6 +48,8 @@ Qiaomu Reader 是中文优先的 Obsidian EPUB、PDF、FB2、MOBI、AZW3 和 CBZ
 
 ![4.2.4 选文工具栏：划线与颜色下拉、批注、问 AI、复制；正文使用青瓷主题与双页布局](docs/assets/showcase-4.2.4-selection.jpg)
 
+**4.2.6 更新：** 选文工具栏默认仅显示图标，启用翻译后显示翻译按钮。在「设置 → 翻页操作 → 选文工具栏」可调整按钮显示与顺序、开启文字标签；隐藏功能仍在“更多”和右键菜单中。AI 回复的“查看原文”支持跨章节与重新打开原书定位。
+
 选中文字，常用操作出现在选文旁边；右键也能使用这些功能。划线颜色通过下拉菜单切换，三种颜色使用统一样式。朱雀仿宋随插件离线提供，也可选择本机字体或导入字体文件；主题、字号、行距与单/双页布局可在阅读设置中调整。书页背景覆盖阅读区域，工具栏跟随 Obsidian。
 
 ### 3. 划线成为笔记，还能回到原文
@@ -261,6 +263,8 @@ BRAT and manual installation remain available as [alternative installation metho
 User-selected font files are read only on import and copied into the vault. Enumerating system fonts happens only after pressing the font picker button. Desktop CLI mode detects user-installed executables and runs them in an isolated temporary directory outside the vault; CLI configuration and login are managed by the installed tool.
 
 Reading works fully offline. In-reader settings are split into Reading and AI Assistance tabs, keeping frequent AI controls close to the book while API keys and endpoint URLs remain in Obsidian plugin settings. Optional AI reading assistance includes built-in quick prompts and supports signed-in Codex CLI, Claude Code CLI, Grok CLI, Kimi Code CLI, and ZCode CLI accounts without additional API-key setup, plus DeepSeek, Kimi, Qwen, GLM, MiniMax, SiliconFlow, Doubao, OpenRouter, OpenAI, Ollama, LM Studio, and custom OpenAI-compatible endpoints. CLI chats use persistent ACP sessions: Grok and Kimi provide ACP natively, while Codex, Claude, and ZCode use separately installed adapters. If an ACP session expires or its process exits before returning any content, the plugin rebuilds it and retries once; authentication, model, session, and process failures are reported separately. Grok ACP is launched with background auto-update disabled so an updater cannot delay the first streamed token. CLI providers are desktop-only and still send the page or selection you explicitly attach to their cloud service. AI is off by default and keys are stored with Obsidian SecretStorage.
+
+**New in 4.2.6:** Selection actions use icons by default, with translation shown when enabled. Configure labels, visibility and order under Settings → Page turning → Selection toolbar. Hidden actions remain in More and the context menu. AI source links can reopen the correct book and navigate across chapters.
 
 Saving an AI reply preserves its complete Markdown body with the source below it, either in a separate note or appended to the book's reading note. An editable title is extracted locally from the reply's topic, emphasis or content, with no extra model request. Saving keeps the chat open, and the saved action opens the existing note. Unsent drafts are persisted locally for up to 30 books (20,000 characters each) and survive sidebar closure/restarts; third-party syncing of the plugin folder may also copy them. Deleting conversations requires confirmation. Screenshots above were captured with the published [4.2.4 release](https://github.com/joeseesun/qiaomu-reader/releases/tag/4.2.4); see the [official listing](https://community.obsidian.md/plugins/qiaomu-reader) for installation.
 
