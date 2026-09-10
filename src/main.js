@@ -2053,7 +2053,6 @@ const QiaomuBookReader = class extends Plugin {
   ensureStarterBooks(explicit = false) {
     if (!this._installStarterLibrary) this._installStarterLibrary = createStarterLibraryInstaller({
       vault: this.app.vault, books: STARTER_BOOKS,
-      hasBooks: () => this.bookFiles().length > 0,
       getState: () => this.settings.starterLibrary,
       getFolder: () => qiaomuReaderPath(`${this.settings.booksFolder || "Books"}/${qiaomuReaderTranslate("starter-books-folder")}`),
       saveState: async (state) => {
