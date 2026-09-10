@@ -1,3 +1,4 @@
+import { selectionActionPreferences } from "./selection-preferences.js";
 import { watchQuietUi } from "./quiet-ui.js";
 import { STARTER_BOOKS } from "./starter-book-data.js";
 import { createStarterLibraryInstaller, findStarterBook } from "./starter-library.js";
@@ -93,6 +94,7 @@ const DEFAULT_LIBRARY_UI = {
 const DEFAULT_READER_SESSION = {
   readerAdvOpen: false, readerHistOpen: false,
   askNoteTitle: true, shortNoteTitles: true, defaultHlColor: "yellow",
+  selectionShowLabels: false, selectionActions: null,
   bookTags: {}, navMode: "buttons",
   timerEnabled: true, dailyGoalMin: 15, readingLog: {}, lifetimeSeconds: 0,
   // Content-first "immersive" chrome: controls overlay the page and fully
@@ -1687,6 +1689,7 @@ const QiaomuBookReader = class extends Plugin {
     this.app.workspace.onLayoutReady(onReady);
   }
   onunload() {
+    this._aiQuoteJumpController?.abort();
     disposeReaderFonts(this);
     disposeCliAiSessions();
     window.clearTimeout(this._bookCmdTimer);
@@ -3367,31 +3370,59 @@ function syncNavigationPanel(view, name) {
   view.tocBtn?.setAttribute("aria-expanded", String(name === "toc"));
 }
 async function jumpToAiQuote(plugin, file, quote) {
+  plugin._aiQuoteJumpController?.abort();
+  const controller = new AbortController();
+  plugin._aiQuoteJumpController = controller;
+  const current = () => !controller.signal.aborted;
   try {
-    if (!(plugin.app.vault.getAbstractFileByPath(file.path) instanceof TFile)) throw new Error("Missing book");
-    let view = plugin._openReaderModal || plugin.app.workspace.getLeavesOfType(VIEW_TYPE).map((leaf) => leaf.view).find((v) => v.file?.path === file.path);
-    if (!view || view.file?.path !== file.path) {
-      await plugin.openFile(file);
-      view = plugin._openReaderModal || plugin.app.workspace.getLeavesOfType(VIEW_TYPE)[0]?.view;
-    }
+    const target = plugin.app.vault.getAbstractFileByPath(file.path);
+    if (!(target instanceof TFile)) throw new Error("Missing book");
+    const leaf = plugin.app.workspace.getLeavesOfType(VIEW_TYPE).find(l => l.view.file?.path === target.path);
+    const modal = plugin._openReaderModal;
+    const view = modal?.file?.path === target.path ? modal : leaf?.view || await plugin.openFile(target);
+    if (!current()) return;
+    // Reveal before waiting: a background window can suspend the renderer's RAF.
+    if (leaf && view === leaf.view) await plugin.app.workspace.revealLeaf(leaf);
+    const valid = () => current() && !view?._closed && view?.file?.path === target.path;
     const deadline = Date.now() + 15000;
-    while (view && Date.now() < deadline && (view.file?.path !== file.path || view._openingBook || !view.pager?.flow)) await new Promise((resolve) => window.setTimeout(resolve, 100));
-    if (!view?.pager?.flow || view.file?.path !== file.path || view._openingBook) throw new Error("Book not ready");
-    const hits = searchBookBlocks(readerSearchTexts(view.pager.flow), quote, 2);
+    while (valid() && Date.now() < deadline && (view._openingBook || (!view.engine && !view.pager?.flow))) {
+      await new Promise(resolve => window.setTimeout(resolve, 100));
+    }
+    if (!valid()) return;
+    if (view._openingBook || (!view.engine && !view.pager?.flow)) throw new Error("Book not ready");
+    const engine = view.engine;
+    const hits = [];
+    if (engine) {
+      // A citation lookup must not clear or cancel the user's book search.
+      for await (const hit of engine.search(quote, { paint: false, limit: 2, signal: controller.signal })) {
+        if (!valid() || view.engine !== engine) return;
+        hits.push(hit);
+        if (hits.length === 2) break;
+      }
+    } else hits.push(...searchBookBlocks(readerSearchTexts(view.pager.flow), quote, 2));
+    if (!valid() || view.engine !== engine) return;
     if (hits.length !== 1) {
-      (view.togglePanel || view._togglePanel).call(view, "find");
+      if (view.panelOpen !== "find") (view.togglePanel || view._togglePanel).call(view, "find");
       view._findInput.value = quote;
-      view._findInput.dispatchEvent(new Event("input"));
+      view._findInput.dispatchEvent(new (view._findInput.ownerDocument.defaultView.Event)("input"));
       view._findInput.focus();
       new Notice(qiaomuReaderTranslate("no-unique-source-location-found-please-check-the-search-results"));
+      return;
+    }
+    if (engine) {
+      await jumpToEngineHighlight(view, hits[0]);
       return;
     }
     rememberReaderJump(view);
     const [cur, total] = restoreReadingAnchor(view.pager, { block: hits[0].block, offset: hits[0].offset, pct: view.pager.currentPct });
     (view.updateUI || view._updateUI).call(view, cur, total);
     markFoundIn(view, quote);
-    await plugin.saveProgress(file.path, cur, total, view.pager.currentBlockIndex());
-  } catch { new Notice(qiaomuReaderTranslate("cannot-locate-the-source-check-that-the-book-is-still-in-the-vau")); }
+    await plugin.saveProgress(target.path, cur, total, view.pager.currentBlockIndex());
+  } catch {
+    if (current()) new Notice(qiaomuReaderTranslate("cannot-locate-the-source-check-that-the-book-is-still-in-the-vau"));
+  } finally {
+    if (plugin._aiQuoteJumpController === controller) plugin._aiQuoteJumpController = null;
+  }
 }
 
 function showLocationMarks(view) {
@@ -4609,10 +4640,34 @@ function toggleSelectionColorDropdown(view) {
   (buttons.find(b => b.getAttribute("aria-checked") === "true") || buttons[0]).focus({ preventScroll: true });
 }
 function syncSelectionToolbar(view) {
+  const config = JSON.stringify([view.plugin.settings.selectionShowLabels, view.plugin.settings.selectionActions, view.plugin.settings.translateEnabled]);
+  if (view.hlPopup && view._selectionToolbarConfig !== config) {
+    view.hlPopup.querySelector(".qiaomu-reader-hl-actions")?.remove();
+    closeSelectionColorDropdown(view);
+    addBarButtons(view, view.hlPopup);
+    view._selectionToolbarConfig = config;
+  }
   const btn = view.hlPopup?.querySelector(".qiaomu-reader-hl-highlight");
   if (!btn) return;
   btn.style.setProperty("--selection-color", hlColorCss(selectionColor(view)));
   btn.setAttribute("aria-pressed", String(!!view._editHlId));
+}
+function selectionActions(view) {
+  const actions = {
+    highlight: ["qiaomu-reader-hl-highlight", "highlighter", "highlight-action", () => view._applyPopupColor(selectionColor(view))],
+    comment: ["qiaomu-reader-hl-comment-btn", "message-square", "annotate-action", () => openInlineHighlightComment(view)],
+    ai: ["qiaomu-reader-hl-ai", "sparkles", "ask-ai-action", () => openAiSelectionChat(view)],
+    translate: ["qiaomu-reader-hl-translate", "languages", "translate", () => {
+      const cur = view._currentHl(), file = view.file;
+      if (!cur || !file || !view.plugin.settings.translateEnabled) return;
+      clearReaderSelection(view); view._hideHlPopup();
+      new TranslateModal(view.app, view.plugin, cur.text, file).open();
+    }],
+    copy: ["qiaomu-reader-hl-copy", "copy", "copy", () => void copySelectionText(view)],
+  };
+  return selectionActionPreferences(view.plugin.settings.selectionActions)
+    .filter(item => item.id !== "translate" || view.plugin.settings.translateEnabled)
+    .map(item => ({ ...item, cls: actions[item.id][0], icon: actions[item.id][1], label: qiaomuReaderTranslate(actions[item.id][2]), run: actions[item.id][3] }));
 }
 function addBarButtons(view, pop) {
   const row = pop.createDiv("qiaomu-reader-hl-actions");
@@ -4621,17 +4676,18 @@ function addBarButtons(view, pop) {
   const button = (parent, cls, icon, label, run, compact = false) => {
     const btn = parent.createEl("button", { cls: "qiaomu-reader-selection-action " + cls, attr: { type: "button", "aria-label": label } });
     setIcon(btn, icon);
-    if (!compact) btn.createSpan({ text: label });
+    if (!compact && view.plugin.settings.selectionShowLabels === true) btn.createSpan({ cls: "qiaomu-reader-selection-label", text: label });
     btn.addEventListener("click", run);
     return btn;
   };
-  const split = row.createDiv("qiaomu-reader-highlight-split");
-  button(split, "qiaomu-reader-hl-highlight", "highlighter", qiaomuReaderTranslate("highlight-action"), () => view._applyPopupColor(selectionColor(view)));
-  const colors = button(split, "qiaomu-reader-hl-colors", "chevron-down", qiaomuReaderTranslate("highlight-colors"), () => toggleSelectionColorDropdown(view), true);
-  colors.setAttribute("aria-expanded", "false");
-  button(row, "qiaomu-reader-hl-comment-btn", "message-square", qiaomuReaderTranslate("annotate-action"), () => openInlineHighlightComment(view));
-  button(row, "qiaomu-reader-hl-ai", "sparkles", qiaomuReaderTranslate("ask-ai-action"), () => openAiSelectionChat(view));
-  button(row, "qiaomu-reader-hl-copy", "copy", qiaomuReaderTranslate("copy"), () => void copySelectionText(view));
+  for (const action of selectionActions(view).filter(item => item.visible)) {
+    const parent = action.id === "highlight" ? row.createDiv("qiaomu-reader-highlight-split") : row;
+    button(parent, action.cls, action.icon, action.label, action.run);
+    if (action.id === "highlight") {
+      const colors = button(parent, "qiaomu-reader-hl-colors", "chevron-down", qiaomuReaderTranslate("highlight-colors"), () => toggleSelectionColorDropdown(view), true);
+      colors.setAttribute("aria-expanded", "false");
+    }
+  }
   const more = button(row, "qiaomu-reader-hl-menu", "ellipsis", qiaomuReaderTranslate("more"), (event) => openSelectionMoreMenu(view, event), true);
   more.setAttribute("aria-haspopup", "menu");
   row.addEventListener("keydown", (event) => {
@@ -4643,7 +4699,7 @@ function addBarButtons(view, pop) {
     buttons[event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
       : (i + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length].focus();
   });
-  pop.addEventListener("keydown", (event) => {
+  row.addEventListener("keydown", (event) => {
     if (event.key === "Escape") { event.preventDefault(); view._hideHlPopup(); }
   });
 }
@@ -4701,13 +4757,9 @@ function openSelectionMoreMenu(view, event, includePrimary = false) {
   };
   if (includePrimary === "colors") colors();
   else {
-    if (includePrimary) {
-      add(qiaomuReaderTranslate("highlight-action"), "highlighter", () => view._applyPopupColor(selectionColor(view)));
-      add(qiaomuReaderTranslate("annotate-action"), "message-square", () => openInlineHighlightComment(view));
-      add(qiaomuReaderTranslate("ask-ai-action"), "sparkles", () => openAiSelectionChat(view));
-      add(qiaomuReaderTranslate("copy"), "copy", () => void copySelectionText(view));
-      menu.addSeparator();
-    }
+    const primary = selectionActions(view).filter(item => includePrimary || !item.visible);
+    for (const action of primary) add(action.label, action.icon, action.run);
+    if (primary.length) menu.addSeparator();
     add(qiaomuReaderTranslate("copy-as-a-quote"), "text-quote", async () => {
       const md = quoteMarkdown(view.plugin, cur, file); close();
       const ok = md && await copyToClipboard(md);
@@ -4720,9 +4772,6 @@ function openSelectionMoreMenu(view, event, includePrimary = false) {
     });
     add(qiaomuReaderTranslate("create-note"), "file-plus", () => {
       close(); createNoteFromSelection(view.app, view.plugin, cur.text, file, { extra: hlCommentMd(cur), color: cur.color, hl: cur });
-    });
-    if (view.plugin.settings.translateEnabled) add(qiaomuReaderTranslate("translate"), "languages", () => {
-      close(); new TranslateModal(view.app, view.plugin, cur.text, file).open();
     });
     if (includePrimary) { menu.addSeparator(); colors(); }
     if (id) {
@@ -12089,6 +12138,7 @@ const SettingsTab = class extends PluginSettingTab {
       [["1", t("one")], ["2", t("two")]], String(s.columns || "2"),
       async value => { s.columns = value; await this.plugin.saveAll(); this._repaginateOpenBooks(); });
     buildPageButtonsSetting(c, this.plugin);
+    this._selectionToolbarSettings(this._settingsDisclosure(c, "selection-toolbar"));
     const extras = c.createEl("details", { cls: "qiaomu-reader-settings-disclosure" });
     extras.createEl("summary", { text: t("reading-goal") });
     c = extras.createDiv("qiaomu-reader-settings-disclosure-body");
@@ -12160,6 +12210,47 @@ const SettingsTab = class extends PluginSettingTab {
     const details = host.createEl("details", { cls: "qiaomu-reader-settings-disclosure" });
     details.createEl("summary", { text: qiaomuReaderTranslate(key) });
     return details.createDiv("qiaomu-reader-settings-disclosure-body");
+  }
+  _selectionToolbarSettings(host) {
+    const s = this.plugin.settings, t = qiaomuReaderTranslate;
+    const render = () => {
+      host.empty();
+      new Setting(host).setName(t("selection-show-labels"))
+        .addToggle(toggle => toggle.setValue(s.selectionShowLabels === true).onChange(async value => {
+          s.selectionShowLabels = value; await this.plugin.saveAll();
+        }));
+      host.createEl("p", { cls: "qiaomu-reader-set-note", text: t("selection-hidden-in-more") });
+      const items = selectionActionPreferences(s.selectionActions);
+      const labels = { highlight: "highlight-action", comment: "annotate-action", ai: "ask-ai-action", translate: "translate", copy: "copy" };
+      const save = async (focus) => {
+        s.selectionActions = items; await this.plugin.saveAll(); render();
+        if (focus) host.querySelector(focus)?.focus();
+      };
+      items.forEach((item, index) => {
+        const row = new Setting(host).setName(t(labels[item.id]));
+        for (const [direction, delta, icon] of [["up", -1, "arrow-up"], ["down", 1, "arrow-down"]]) {
+          row.addButton(button => {
+            button.setIcon(icon).setDisabled(index + delta < 0 || index + delta >= items.length);
+            button.buttonEl.setAttribute("aria-label", t(direction === "up" ? "selection-move-up" : "selection-move-down"));
+            button.buttonEl.dataset.selectionMove = item.id + "-" + direction;
+            button.onClick(async () => {
+              [items[index], items[index + delta]] = [items[index + delta], items[index]];
+              await save(`[data-selection-move="${item.id}-${direction}"]`);
+            });
+          });
+        }
+        row.addToggle(toggle => {
+          toggle.toggleEl.dataset.selectionVisible = item.id;
+          toggle.setValue(item.visible).onChange(async value => {
+            item.visible = value; await save(`[data-selection-visible="${item.id}"]`);
+          });
+        });
+      });
+      new Setting(host).addButton(button => button.setButtonText(t("restore-defaults")).onClick(async () => {
+        s.selectionActions = null; s.selectionShowLabels = false; await this.plugin.saveAll(); render();
+      }));
+    };
+    render();
   }
   _aiProviderRow(host, s, redraw) {
     new Setting(host).setName(qiaomuReaderTranslate("ai-service")).addDropdown(dropdown => {

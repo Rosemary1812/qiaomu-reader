@@ -679,12 +679,12 @@ test("AI prompt and context are Chinese-first", () => {
 test("selection popup keeps primary actions compact and moves note tools into More", () => {
   const source = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
   const css = fs.readFileSync(new URL("../styles.css", import.meta.url), "utf8");
-  const start = source.indexOf("function addBarButtons");
+  const start = source.indexOf("function selectionActions");
   const end = source.indexOf("const AiExplainModal", start);
   const popupSource = source.slice(start, end);
   assert.match(source, /const ai = aiSetupState\(view\.plugin\)/); // selection AI entry moved into the shared popup helper
   assert.match(source, /ai\.ready && ai\.enabled/); // selection AI gate rides the shared popup helper
-  assert.match(popupSource, /button\(row, "qiaomu-reader-hl-ai", "sparkles"/); // AI entry in the button descriptor table
+  assert.match(popupSource, /ai: \["qiaomu-reader-hl-ai", "sparkles"/); // AI entry in the button descriptor table
   assert.match(popupSource, /kind: "selection"[\s\S]*text: cur\.text[\s\S]*bookFile: view\.file/);
   assert.match(popupSource, /button\(row, "qiaomu-reader-hl-menu", "ellipsis"/); // More entry in the button table
   assert.match(popupSource, /add\(qiaomuReaderTranslate\("create-note"\)/);

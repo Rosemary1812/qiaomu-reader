@@ -1,6 +1,12 @@
 // Russian locale pack. Inherited Russian UI strings keep their original wording;
 // strings that were originally Chinese source keys are translated to Russian here.
 export default {
+  "selection-toolbar": "Панель выделения",
+  "selection-show-labels": "Показывать подписи",
+  "selection-hidden-in-more": "Скрытые действия доступны в меню «Ещё» и контекстном меню. Кнопка перевода появляется после его включения.",
+  "selection-move-up": "Выше",
+  "selection-move-down": "Ниже",
+
   "welcome-library-title": "Откройте книгу и начните",
   "welcome-library-body": "Попробуйте встроенную классику или добавьте EPUB, PDF или MOBI. Продолжить чтение можно из библиотеки.",
   "welcome-reading-title": "Читайте с комфортом",

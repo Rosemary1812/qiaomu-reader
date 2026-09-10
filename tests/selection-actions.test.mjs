@@ -4,12 +4,13 @@ import vm from "node:vm";
 import test from "node:test";
 import { parse } from "acorn";
 import { JSDOM } from "jsdom";
+import { selectionActionPreferences } from "../src/selection-preferences.js";
 import { highlightBacklink } from "../src/highlight-navigation.js";
 
 const source = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const ast = parse(source, { ecmaVersion: "latest", sourceType: "module" });
 const functions = ast.body.filter(n => n.type === "FunctionDeclaration");
-const names = ["matchingSelectionHighlight", "selectionColor", "clearReaderSelection", "beginReaderSelection", "engineSelectionRect", "openReaderSelectionContext", "selectionFeedback", "repaintSelectionHighlights", "applySelectionColor", "closeSelectionColorDropdown", "toggleSelectionColorDropdown", "syncSelectionToolbar", "addBarButtons", "openSelectionMoreMenu", "copySelectionText", "openAiSelectionChat", "closeInlineHighlightComment", "openInlineHighlightComment", "handleAreaNavClick"];
+const names = ["selectionActions","matchingSelectionHighlight", "selectionColor", "clearReaderSelection", "beginReaderSelection", "engineSelectionRect", "openReaderSelectionContext", "selectionFeedback", "repaintSelectionHighlights", "applySelectionColor", "closeSelectionColorDropdown", "toggleSelectionColorDropdown", "syncSelectionToolbar", "addBarButtons", "openSelectionMoreMenu", "copySelectionText", "openAiSelectionChat", "closeInlineHighlightComment", "openInlineHighlightComment", "handleAreaNavClick"];
 const code = functions.filter(n => names.includes(n.id.name)).map(n => source.slice(n.start, n.end)).join("\n");
 const tick = () => new Promise(r => setTimeout(r, 5));
 function setup() {
@@ -59,7 +60,8 @@ function setup() {
     _applyPopupColor(color) { api.applySelectionColor(this, color); },
   };
   class Scope { constructor() { this.bindings = []; } register(mods, key, run) { this.bindings.push({ mods, key, run }); } }
-  const context = { window, Menu, Scope, aiSetupState: () => ({ ready: true, enabled: true }), paintAiSource() {}, qiaomuReaderTranslate: k => k, setIcon() {}, highlightBacklink,
+  const translations = [];
+  const context = { selectionActionPreferences, TranslateModal: class { constructor(app, plugin, text, file) { translations.push({ text, file }); } open() {} }, window, Menu, Scope, aiSetupState: () => ({ ready: true, enabled: true }), paintAiSource() {}, qiaomuReaderTranslate: k => k, setIcon() {}, highlightBacklink,
     docOf: el => el.ownerDocument, selOf: el => el.ownerDocument.getSelection(), readerIsPdf: () => false,
     qiaomuReaderRefreshHlPanel() {}, qiaomuReaderAutoFocus() {}, positionHlPopup() {},
     hlCommentQuoteBlock() {}, Notice: class {},
@@ -69,7 +71,7 @@ function setup() {
   };
   const api = vm.runInNewContext(`${code}\n({${names.join(",")}})`, context);
   view._showHlPopup({ left: 10, right: 210, top: 100, bottom: 120, width: 200, height: 20 });
-  return { window, view, api, menus, records, copied, savedComments, close: () => window.close() };
+  return { window, view, api, menus, records, copied, savedComments, translations, close: () => window.close() };
 }
 
 test("toolbar exposes stable labeled actions and a separate three-color menu", () => {
@@ -170,4 +172,50 @@ test("Ask AI attaches selected text and book context without submitting a prompt
   assert.equal(contexts.length, 1); assert.equal(contexts[0].text, "选中文本");
   assert.equal(contexts[0].bookFile.path, "Book.mobi"); assert.equal(contexts[0].kind, "selection");
   assert.equal(f.view._pendingSel, null); f.close();
+});
+
+
+test("icon-only defaults keep accessible names, translated text is opt-in", () => {
+  const f = setup(); f.api.addBarButtons(f.view, f.view.hlPopup);
+  assert.equal(f.view.hlPopup.querySelectorAll(".qiaomu-reader-selection-label").length, 0);
+  assert.ok([...f.view.hlPopup.querySelectorAll("button")].every(b => b.getAttribute("aria-label")));
+  f.view.plugin.settings.selectionShowLabels = true;
+  f.api.syncSelectionToolbar(f.view);
+  assert.equal(f.view.hlPopup.querySelectorAll(".qiaomu-reader-hl-actions").length, 1);
+  assert.equal(f.view.hlPopup.querySelectorAll(".qiaomu-reader-selection-label").length, 4);
+  f.close();
+});
+
+test("translation becomes a primary action only when enabled and retains selected text", () => {
+  const f = setup(); f.api.syncSelectionToolbar(f.view);
+  assert.equal(f.view.hlPopup.querySelector(".qiaomu-reader-hl-translate"), null);
+  f.view.plugin.settings.translateEnabled = true; f.api.syncSelectionToolbar(f.view);
+  f.view.hlPopup.querySelector(".qiaomu-reader-hl-translate").click();
+  assert.deepEqual(f.translations.map(t => t.text), ["选中文本"]);
+  assert.equal(f.translations[0].file.path, "Book.mobi");
+  f.close();
+});
+
+test("configured order is shared with right click and hidden actions remain in More", () => {
+  const f = setup();
+  f.view.plugin.settings.selectionActions = [{ id: "copy" }, { id: "highlight", visible: false }];
+  f.api.syncSelectionToolbar(f.view);
+  assert.equal(f.view.hlPopup.querySelector("button").getAttribute("aria-label"), "copy");
+  assert.equal(f.view.hlPopup.querySelector(".qiaomu-reader-highlight-split"), null);
+  f.api.openSelectionMoreMenu(f.view, {}, false);
+  assert.equal(f.menus[0].items[0].title, "highlight-action");
+  f.api.openSelectionMoreMenu(f.view, {}, true);
+  assert.deepEqual(f.menus[1].items.slice(0, 4).map(i => i.title), ["copy", "highlight-action", "annotate-action", "ask-ai-action"]);
+  f.close();
+});
+
+test("preferences recover malformed values and preserve deliberate all-hidden state", () => {
+  const defaults = selectionActionPreferences(null);
+  assert.equal(defaults.length, 5);
+  const normalized = selectionActionPreferences([null, {id:"bogus"}, {id:"copy",visible:false}, {id:"copy"}]);
+  assert.equal(normalized.length, 5); assert.equal(normalized[0].visible, false);
+  const f = setup(); f.view.plugin.settings.selectionActions = defaults.map(x => ({...x, visible:false}));
+  f.api.addBarButtons(f.view, f.view.hlPopup);
+  assert.equal(f.view.hlPopup.querySelectorAll("button").length, 1);
+  assert.ok(f.view.hlPopup.querySelector(".qiaomu-reader-hl-menu")); f.close();
 });

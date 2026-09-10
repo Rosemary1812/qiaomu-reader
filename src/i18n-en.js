@@ -1,4 +1,10 @@
 export const QIAOMU_READER_EN = {
+  "selection-toolbar": "Selection toolbar",
+  "selection-show-labels": "Show button labels",
+  "selection-hidden-in-more": "Hidden actions remain available in More and the right-click menu. Translation appears when enabled.",
+  "selection-move-up": "Move up",
+  "selection-move-down": "Move down",
+
   "welcome-library-title": "Open a book and begin",
   "welcome-library-body": "Try a bundled classic or add your own EPUB, PDF or MOBI. Your library keeps the books you are reading close at hand.",
   "welcome-reading-title": "Make reading comfortable",

@@ -1,4 +1,10 @@
 export default {
+  "selection-toolbar": "Barre de sélection",
+  "selection-show-labels": "Afficher les libellés",
+  "selection-hidden-in-more": "Les actions masquées restent dans Plus et le menu contextuel. La traduction apparaît lorsqu’elle est activée.",
+  "selection-move-up": "Monter",
+  "selection-move-down": "Descendre",
+
   "welcome-library-title": "Ouvrez un livre et commencez",
   "welcome-library-body": "Essayez un classique inclus ou ajoutez vos EPUB, PDF ou MOBI. Retrouvez vos lectures en cours dans la bibliothèque.",
   "welcome-reading-title": "Lisez confortablement",

@@ -1,4 +1,10 @@
 export default {
+  "selection-toolbar": "Barra de seleção",
+  "selection-show-labels": "Mostrar rótulos",
+  "selection-hidden-in-more": "As ações ocultas continuam em Mais e no menu de contexto. Traduzir aparece quando a tradução está ativada.",
+  "selection-move-up": "Mover para cima",
+  "selection-move-down": "Mover para baixo",
+
   "welcome-library-title": "Abra um livro e comece",
   "welcome-library-body": "Experimente um clássico incluído ou adicione EPUB, PDF ou MOBI. Continue suas leituras pela biblioteca.",
   "welcome-reading-title": "Leia com conforto",

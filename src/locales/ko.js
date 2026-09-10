@@ -1,4 +1,10 @@
 export default {
+  "selection-toolbar": "선택 도구 모음",
+  "selection-show-labels": "버튼 이름 표시",
+  "selection-hidden-in-more": "숨긴 기능은 더 보기 및 오른쪽 클릭 메뉴에서 사용할 수 있습니다. 번역을 활성화하면 번역 버튼이 표시됩니다.",
+  "selection-move-up": "위로",
+  "selection-move-down": "아래로",
+
   "welcome-library-title": "책을 열고 시작하세요",
   "welcome-library-body": "내장된 고전을 읽거나 EPUB, PDF, MOBI를 추가하세요. 읽던 책은 서재에서 이어 읽을 수 있습니다.",
   "welcome-reading-title": "편안하게 읽으세요",

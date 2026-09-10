@@ -157,7 +157,7 @@ if (!source.includes('let body = "";') || !source.includes("stripGeneratedReadin
 if (!source.includes('const QUICK_HL_COLOR_IDS = ["yellow", "green", "pink"]') || !source.includes('QUICK_HL_COLOR_IDS.includes(entry.id)')) {
   errors.push("Selection popup does not expose the intended three-colour palette");
 }
-if (!source.includes('button(row, "qiaomu-reader-hl-comment-btn", "message-square"') || !source.includes('createEl("textarea", { cls: "qiaomu-reader-hl-comment-textarea" })')) {
+if (!source.includes('comment: ["qiaomu-reader-hl-comment-btn", "message-square"') || !source.includes('createEl("textarea", { cls: "qiaomu-reader-hl-comment-textarea" })')) {
   errors.push("Selection popup does not provide an inline nearby comment editor");
 }
 if (!source.includes('button(row, "qiaomu-reader-hl-menu", "ellipsis"') || source.includes("qiaomu-reader-hl-note")) {
