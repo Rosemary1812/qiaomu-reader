@@ -39,3 +39,18 @@ export function createReaderLoadCoordinator() {
     },
   };
 }
+
+// A background Obsidian window can suspend RAF until it is revealed. Opening
+// must not wait forever for that frame before revealLeaf gets a chance to run.
+export function waitForReaderFrame(win) {
+  return new Promise((resolve) => {
+    let frame = null;
+    const finish = () => {
+      win.clearTimeout(timer);
+      if (frame !== null) win.cancelAnimationFrame(frame);
+      resolve();
+    };
+    const timer = win.setTimeout(finish, 100);
+    frame = win.requestAnimationFrame(finish);
+  });
+}

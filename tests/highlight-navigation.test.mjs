@@ -75,6 +75,9 @@ test("protocol dispatch waits for its opened view and keeps CFI ahead of legacy 
   assert.deepEqual(calls, ["h1"]);
   await openBookAt.call(plugin, file.path, undefined, undefined, "deleted", cfi);
   assert.equal(calls[1], cfi);
+  await assert.rejects(openBookAt.call(plugin, file.path, "0"), /highlight-not-found/);
+  assert.equal(calls.length, 2, "ebook block links must not use PDF navigation");
+  view.engine = null; view.pager = { total: 12 };
   await openBookAt.call(plugin, file.path, "0");
   assert.equal(calls[2], 0);
   await openBookAt.call(plugin, file.path, undefined, "12");

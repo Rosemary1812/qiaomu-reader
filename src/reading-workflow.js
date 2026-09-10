@@ -22,10 +22,10 @@ export function verifiedQuotes(answer, sources) {
 
 export function normalizeLocationMarks(value) {
   if (!Array.isArray(value)) return [];
-  return value.filter((item) => item && typeof item.id === "string" && item.id && typeof item.bookPath === "string" && item.bookPath && typeof item.title === "string" && Number.isInteger(item.anchor?.block) && item.anchor.block >= 0)
+  return value.filter((item) => item && typeof item.id === "string" && item.id && typeof item.bookPath === "string" && item.bookPath && typeof item.title === "string" && (typeof item.anchor?.cfi === "string" && item.anchor.cfi.startsWith("epubcfi(") || Number.isInteger(item.anchor?.block) && item.anchor.block >= 0))
     .slice(-500).map((item) => ({
       id: item.id.slice(0, 80), bookPath: item.bookPath.slice(0, 500), title: item.title.slice(0, 80),
       excerpt: String(item.excerpt || "").slice(0, 160),
-      anchor: { block: item.anchor.block, offset: Math.max(0, Number(item.anchor.offset) || 0), pct: Math.min(1, Math.max(0, Number(item.anchor.pct) || 0)), pdfPage: Math.max(0, Number(item.anchor.pdfPage) || 0) },
+      anchor: typeof item.anchor.cfi === "string" && item.anchor.cfi.startsWith("epubcfi(") ? { cfi: item.anchor.cfi, pct: Math.min(1, Math.max(0, Number(item.anchor.pct) || 0)) } : { block: item.anchor.block, offset: Math.max(0, Number(item.anchor.offset) || 0), pct: Math.min(1, Math.max(0, Number(item.anchor.pct) || 0)), pdfPage: Math.max(0, Number(item.anchor.pdfPage) || 0) },
     }));
 }

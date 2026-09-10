@@ -117,6 +117,8 @@ export class EpubEngine {
     }
 
     async open(bytes, fileName, opts = {}) {
+        // Reusing an adapter must release its previous parser and observers.
+        this.destroy();
         // Format is sniffed from the bytes by the library, not from the name.
         const file = new File([bytes], fileName);
         const view = document.createElement(VIEW_TAG);
@@ -243,12 +245,23 @@ export class EpubEngine {
     async next(distance) { await this.#view?.next(distance); }
     async prev(distance) { await this.#view?.prev(distance); }
     async goTo(target) {
-        const resolved = await this.#view?.goTo(target);
-        if (!resolved) throw new Error("Could not navigate to book location");
+        const view = this.#view;
+        const fail = () => new Error("Could not navigate to book location");
+        if (!view) throw fail();
+        const destination = view.resolveNavigation(target);
+        if (!Number.isInteger(destination?.index) || destination.index < 0 || destination.index >= this.#book.sections.length) throw fail();
+        const resolved = await view.goTo(target);
+        if (this.#view !== view) throw Object.assign(new Error("Reader closed"), { name: "AbortError" });
+        // Foliate can silently ignore an invalid or locked destination.
+        const contents = view.renderer?.getContents?.() || [];
+        if (!resolved || !contents.some(({ doc, index }) => doc && (view.isFixedLayout || index === destination.index))) throw fail();
         return resolved;
     }
-    async goToFraction(fraction) { await this.#view?.goToFraction(fraction); }
-    async goToTocItem(item) { await this.#view?.goTo(item?.href ?? item); }
+    async goToFraction(fraction) {
+        if (!Number.isFinite(fraction)) throw new Error("Could not navigate to book location");
+        return this.goTo({ fraction: Math.max(0, Math.min(1, fraction)) });
+    }
+    async goToTocItem(item) { return this.goTo(item?.href ?? item); }
 
     currentLocation() {
         return this.#view?.lastLocation ?? null;
