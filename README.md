@@ -1,9 +1,13 @@
 # Qiaomu Reader
 
-**中文** · [English](#english) · [下载最新版](https://github.com/joeseesun/qiaomu-reader/releases/latest) · [问题反馈](https://github.com/joeseesun/qiaomu-reader/issues)
+**中文** · [English](#english) · [官方插件页 · 安装](https://community.obsidian.md/plugins/qiaomu-reader) · [问题反馈](https://github.com/joeseesun/qiaomu-reader/issues)
 
 > 不离开书页，读懂一个观点，留下一条真正有用的笔记。
 > Read, ask, and keep what matters — without leaving your book in Obsidian.
+
+**已上架 Obsidian 社区插件市场。** 打开 [Qiaomu Reader 官方插件页](https://community.obsidian.md/plugins/qiaomu-reader)，点击 **Add to Obsidian**，在 Obsidian 中点击 **安装 → 启用**。
+
+也可以在 Obsidian 中进入 **设置 → 第三方插件 → 浏览**，搜索 **Qiaomu Reader**，选择作者为 **向阳乔木** 的插件。首次使用第三方插件时，先按提示开启社区插件。[完整安装步骤](#安装)
 
 ![真实 Obsidian：左侧中文 EPUB 阅读，右侧 AI 对话展示表格、任务列表与常驻快捷问题](docs/assets/showcase-reader-ai.jpg)
 
@@ -13,7 +17,7 @@ Qiaomu Reader 是中文优先的 Obsidian EPUB、PDF、FB2、MOBI、AZW3 和 CBZ
 
 [安装与快速开始](#安装) · [功能导览](#功能导览) · [构建验证](https://github.com/joeseesun/qiaomu-reader/actions) · [GPL-3.0 许可](LICENSE)
 
-**版本说明：**当前源码版本为 4.2.4；下方截图来自此前的 4.1.0 演示构建，部分布局已更新，BRAT 和下载版本以 [GitHub Releases](https://github.com/joeseesun/qiaomu-reader/releases) 为准。合并 main 不会自动更新已安装插件。
+**截图说明：**下方截图来自此前的 4.1.0 演示构建，部分布局已更新。当前可安装版本见 [官方插件页](https://community.obsidian.md/plugins/qiaomu-reader)，更新记录见 [GitHub Releases](https://github.com/joeseesun/qiaomu-reader/releases)。
 
 截图来自 Computer Use 操作的真实 Obsidian 1.13.7，使用原创演示书和明确标注的示例对话，不含私人仓库或商业书籍页面；示例回答不是模型效果或速度评测。详见[截图与验证说明](docs/showcase.md)。
 
@@ -78,18 +82,39 @@ PDF 不再被拆成容易错位的普通段落，而是始终保留原始页面�
 
 ## 安装
 
-这是以新插件 ID `qiaomu-reader` 提交的版本。旧版用户请先备份仓库并禁用 Qiaomu Book Reader，再启用新版，避免两个阅读器同时注册同一文件类型。书籍与 Markdown 笔记保留在原位置；需要保留旧设置和阅读数据时，在两个插件均禁用的情况下，将旧插件目录中的 JSON 数据文件复制到新插件目录，保留原件作为备份。旧笔记中的 `obsidian://qiaomu-book-reader` 回跳链接仍受支持。官方目录安装状态以商店页面为准。
+### 从 Obsidian 社区插件市场安装（推荐）
 
-### 使用 BRAT（推荐）
+1. 打开 Obsidian，进入 **设置 → 第三方插件（Community plugins）**。首次使用时，点击 **开启社区插件（Turn on community plugins）**。
+2. 点击 **浏览（Browse）**，搜索 **Qiaomu Reader**。
+3. 选择 **Qiaomu Reader**，确认作者为 **向阳乔木**，点击 **安装（Install）**。
+4. 安装完成后点击 **启用（Enable）**，打开左侧工具栏的书库图标，开始阅读。
 
-1. 在 Obsidian 第三方插件市场安装 **BRAT**。
+也可以打开 [官方插件页](https://community.obsidian.md/plugins/qiaomu-reader)，点击 **Add to Obsidian** 并允许浏览器打开 Obsidian，再完成安装与启用。如果浏览器没有唤起应用，使用上面的应用内搜索步骤即可。桌面和移动端都可以从第三方插件市场安装；本机 CLI 助读仅限桌面。
+
+阅读、划线和笔记无需配置 AI；首次打开书库即可体验内置公版书，也可以添加自己的图书。需要 AI 时，再进入插件设置选择服务并测试连接。
+
+**更新插件：**进入 **设置 → 第三方插件 → 检查更新（Check for updates）**，找到 Qiaomu Reader 后点击更新。社区插件不会自动更新。
+
+<details>
+<summary>旧版 Qiaomu Book Reader 用户迁移</summary>
+
+新版插件 ID 为 `qiaomu-reader`，请搜索 **Qiaomu Reader**。先备份仓库并禁用旧版 Qiaomu Book Reader，再启用新版，避免两个阅读器同时注册同一文件类型。书籍与 Markdown 笔记保留在原位置。
+
+需要保留旧设置和阅读数据时，在两个插件均禁用的情况下，将 `.obsidian/plugins/qiaomu-book-reader/` 中的 JSON 数据文件复制到 `.obsidian/plugins/qiaomu-reader/`，**不要复制旧版 `manifest.json`**，并保留原件作为备份。旧笔记中的 `obsidian://qiaomu-book-reader` 回跳链接仍受支持。
+
+</details>
+
+<details>
+<summary>备用方式：通过 BRAT 安装</summary>
+
+1. 在 Obsidian 第三方插件市场安装并启用 **BRAT**。
 2. 打开 BRAT → **Add beta plugin**。
 3. 输入 `joeseesun/qiaomu-reader`。
 4. 在“第三方插件”中启用 **Qiaomu Reader**。
 
-之后的新版本会通过 GitHub Releases 由 BRAT 持续更新。
+此方式使用 GitHub Releases，后续更新由 BRAT 管理。一般用户使用上面的官方社区安装即可。
 
-启用后打开“书库”，选择书籍文件夹或添加图书即可开始阅读。先读书无需配置 AI；需要 AI 时再进入插件设置选择服务并测试连接。CLI 模式需自行完成对应 CLI 的安装与登录；模型服务可能收费，遵循所选服务的账号和计费规则。
+</details>
 
 <details>
 <summary>手动安装</summary>
@@ -162,7 +187,7 @@ CLI 模式会自动检测可执行文件和登录状态，在独立临时目录�
 
 ## 从源码构建
 
-默认构建和社区验证构建均不包含依赖自动安装器。`npm run build:community` 输出到 `dist/community/`，不包含 ACP 自动安装器，保留手动安装指引、检测和常驻对话能力。日常安装使用上面的 BRAT / Release 入口。
+默认构建和社区验证构建均不包含依赖自动安装器。`npm run build:community` 输出到 `dist/community/`，不包含 ACP 自动安装器，保留手动安装指引、检测和常驻对话能力。日常安装使用 [Obsidian 官方社区插件页](https://community.obsidian.md/plugins/qiaomu-reader)。
 
 ```bash
 npm ci
@@ -174,7 +199,7 @@ npm run verify:release
 npm run build:community
 ```
 
-构建产物是仓库根目录的 `main.js`、`styles.css` 和 `manifest.json`；可编辑样式位于 `src/styles.css`。构建强制每个发布文件不超过 5,000,000 字节。唯一内置字体的来源、版本与许可见 [fonts/README.md](fonts/README.md) 和 [fonts/OFL.txt](fonts/OFL.txt)。
+构建产物是仓库根目录的 `main.js`、`styles.css` 和 `manifest.json`；可编辑样式位于 `src/styles.css`。发布文件大小由构建与发布校验脚本中的项目预算检查。唯一内置字体的来源、版本与许可见 [fonts/README.md](fonts/README.md) 和 [fonts/OFL.txt](fonts/OFL.txt)。
 
 ### 验证与边界
 
@@ -182,7 +207,7 @@ npm run build:community
 - CLI / ACP 仅限桌面；移动真机触控与软键盘仍待专项验证，桌面窄窗口不等于移动端验收。
 - 不内置 OCR，不承诺扫描 PDF 可以文字问答；不提供跨书语义检索，也不授予阅读 Agent 文件/终端工具权限。
 - 持久 ACP 会话减少重复启动开销，但首字速度仍受 CLI、模型、网络和上下文长度影响，目前没有可公开比较的性能基准。
-- 社区候选版仅供验证；正式安装请使用 GitHub Releases 或 BRAT。
+- 社区候选版仅供验证；正式安装优先使用 [Obsidian 社区插件市场](https://community.obsidian.md/plugins/qiaomu-reader)。
 
 ## 作者
 
@@ -200,6 +225,19 @@ Qiaomu Reader 由 [向阳乔木](https://qiaomu.ai) 维护：
 
 # English
 
+### Install from Obsidian Community Plugins
+
+**Available in the official directory:** open [Qiaomu Reader](https://community.obsidian.md/plugins/qiaomu-reader), select **Add to Obsidian**, then **Install → Enable** in Obsidian. If your browser does not open the app, install from inside Obsidian:
+
+1. Open **Settings → Community plugins**. Select **Turn on community plugins** if prompted.
+2. Select **Browse** and search for **Qiaomu Reader**.
+3. Choose **Qiaomu Reader** by **向阳乔木**, then select **Install → Enable**.
+4. Open the library from the left ribbon to try the bundled public-domain books or add your own. AI setup is optional.
+
+For updates, use **Settings → Community plugins → Check for updates**, then update Qiaomu Reader. Community plugins do not update automatically. If you used Qiaomu Book Reader before, back up your vault and disable it before enabling the new plugin; see the [migration instructions](#安装).
+
+### Read, highlight and keep notes
+
 Qiaomu Reader is a Chinese-first reader for Obsidian supporting EPUB, PDF, FB2, MOBI, AZW3 and CBZ. PDF files retain their original fixed page layout; pages with a reliable text layer support selection, search, highlights, annotations and full-document or selected-text AI context, while scan-only pages provide original-page reading, progress and one book-level note without pretending OCR is available. The plugin keeps one dedicated Markdown reading note per book inside your vault.
 
 ### A reading workflow, not just a chat window
@@ -212,17 +250,17 @@ The screenshots above follow six everyday tasks: **read and ask side by side; sa
 - Focused reading keeps an already-open AI sidebar without reopening the file tree.
 - Chats are associated with books, with searchable/renameable history and immutable source context on sent questions.
 
-New installations default to a bundled Zhuque Fangsong reading subset (7,554 codepoints); missing glyphs fall back to system fonts. Select Custom font to browse installed fonts or import TTF, OTF, WOFF or WOFF2 files. Imported files sync with the vault; mobile platforms without font enumeration can use file import. The font is embedded in styles.css and each release asset is kept under 5 MB. Other fonts are user-installed; see [font downloads](fonts/README.md).
+New installations default to a bundled Zhuque Fangsong reading subset (7,554 codepoints); missing glyphs fall back to system fonts. Select Custom font to browse installed fonts or import TTF, OTF, WOFF or WOFF2 files. Imported files sync with the vault; mobile platforms without font enumeration can use file import. The font is embedded in styles.css and installed with the plugin. Other fonts are user-installed; see [font downloads](fonts/README.md).
 
 The interface supports Simplified Chinese, English, Russian, Japanese, Spanish, French, German, Korean, and Brazilian Portuguese. Select a language at the top of plugin settings; all language packs are bundled for offline use. Reopen existing book tabs and chats to apply the new language there. Book text, notes, and AI responses are not translated by this setting. Some newer Russian UI strings still fall back to English.
 
-Install it with BRAT using `joeseesun/qiaomu-reader`, or download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/joeseesun/qiaomu-reader/releases/latest).
+BRAT and manual installation remain available as [alternative installation methods](#安装).
 
 User-selected font files are read only on import and copied into the vault. Enumerating system fonts happens only after pressing the font picker button. Desktop CLI mode detects user-installed executables and runs them in an isolated temporary directory outside the vault; CLI configuration and login are managed by the installed tool.
 
 Reading works fully offline. In-reader settings are split into Reading and AI Assistance tabs, keeping frequent AI controls close to the book while API keys and endpoint URLs remain in Obsidian plugin settings. Optional AI reading assistance includes built-in quick prompts and supports signed-in Codex CLI, Claude Code CLI, Grok CLI, Kimi Code CLI, and ZCode CLI accounts without additional API-key setup, plus DeepSeek, Kimi, Qwen, GLM, MiniMax, SiliconFlow, Doubao, OpenRouter, OpenAI, Ollama, LM Studio, and custom OpenAI-compatible endpoints. CLI chats use persistent ACP sessions: Grok and Kimi provide ACP natively, while Codex, Claude, and ZCode use separately installed adapters. If an ACP session expires or its process exits before returning any content, the plugin rebuilds it and retries once; authentication, model, session, and process failures are reported separately. Grok ACP is launched with background auto-update disabled so an updater cannot delay the first streamed token. CLI providers are desktop-only and still send the page or selection you explicitly attach to their cloud service. AI is off by default and keys are stored with Obsidian SecretStorage.
 
-Saving an AI reply preserves its complete Markdown body with the source below it, either in a separate note or appended to the book's reading note. An editable title is extracted locally from the reply's topic, emphasis or content, with no extra model request. Saving keeps the chat open, and the saved action opens the existing note. Unsent drafts are persisted locally for up to 30 books (20,000 characters each) and survive sidebar closure/restarts; third-party syncing of the plugin folder may also copy them. Deleting conversations requires confirmation. The current 4.2.3 source is separate from the latest GitHub Release used by BRAT; screenshots above are from the earlier 4.1.0 demonstration build.
+Saving an AI reply preserves its complete Markdown body with the source below it, either in a separate note or appended to the book's reading note. An editable title is extracted locally from the reply's topic, emphasis or content, with no extra model request. Saving keeps the chat open, and the saved action opens the existing note. Unsent drafts are persisted locally for up to 30 books (20,000 characters each) and survive sidebar closure/restarts; third-party syncing of the plugin folder may also copy them. Deleting conversations requires confirmation. Screenshots above are from the earlier 4.1.0 demonstration build; see the [official listing](https://community.obsidian.md/plugins/qiaomu-reader) for the current installable version and [GitHub Releases](https://github.com/joeseesun/qiaomu-reader/releases) for release notes.
 
 ### Verification and limits
 
