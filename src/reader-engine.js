@@ -66,6 +66,31 @@ function disposeEngineView(view) {
     try { book?.destroy?.(); } finally { view.book = null; view.remove(); }
 }
 
+// Foliate may resolve an obsolete CFI to an out-of-range section and return
+// successfully without loading a document. Treat rendered content plus a
+// location as the completion contract, not just a resolved init() promise.
+export async function restoreEngineLocation(view, opts = {}, isCurrent = () => true) {
+    const assertCurrent = () => {
+        if (!isCurrent()) throw Object.assign(new Error("Reader closed"), { name: "AbortError" });
+    };
+    const rendered = () => !!view.lastLocation && !!view.renderer?.getContents?.().some(({ doc }) => doc);
+    const fraction = typeof opts.initialFraction === "number" && Number.isFinite(opts.initialFraction)
+        ? Math.max(0, Math.min(1, opts.initialFraction)) : null;
+    const attempt = async (navigate) => {
+        assertCurrent();
+        try { await navigate(); }
+        catch (error) { if (error?.name === "AbortError") throw error; }
+        assertCurrent();
+        return rendered();
+    };
+    if (await attempt(() => view.init({ lastLocation: opts.initialCfi || undefined }))) return;
+    if (fraction !== null && await attempt(() => view.goToFraction(fraction))) return;
+    // Use an explicit chapter target: next() can be a no-op while a newly
+    // created Obsidian tab is still hidden and has zero layout dimensions.
+    if (await attempt(() => view.goToTextStart())) return;
+    throw new Error("Could not load a readable book location");
+}
+
 export class EpubEngine {
     #host;
     #hooks;
@@ -158,10 +183,10 @@ export class EpubEngine {
             this.#resizeObserver.observe(this.#host);
         }
         try {
-            await view.init({ lastLocation: opts.initialCfi || undefined });
-        } catch {
-            // A stale CFI from an older build must not fail the whole open;
-            // starting at the top of the book is acceptable.
+            await restoreEngineLocation(view, opts, () => this.#view === view);
+        } catch (error) {
+            if (this.#view === view) this.destroy();
+            throw error;
         }
         if (this.#view !== view) {
             disposeEngineView(view);
