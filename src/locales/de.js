@@ -1,4 +1,10 @@
 export default {
+  "selection-toolbar": "Auswahlwerkzeuge",
+  "selection-show-labels": "Schaltflächen beschriften",
+  "selection-hidden-in-more": "Ausgeblendete Aktionen bleiben unter Mehr und im Kontextmenü verfügbar. Übersetzen erscheint, wenn es aktiviert ist.",
+  "selection-move-up": "Nach oben",
+  "selection-move-down": "Nach unten",
+
   "welcome-library-title": "Ein Buch öffnen und loslesen",
   "welcome-library-body": "Lies einen mitgelieferten Klassiker oder füge EPUB, PDF oder MOBI hinzu. In der Bibliothek findest du deine begonnenen Bücher wieder.",
   "welcome-reading-title": "Angenehm lesen",

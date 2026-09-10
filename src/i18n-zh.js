@@ -1,6 +1,12 @@
 // Generated from the complete source UI dictionary and reviewed for core reading terms.
 // Keep placeholders, Markdown and HTML structure identical to the source strings.
 export const QIAOMU_READER_ZH_CN = {
+  "selection-toolbar": "选文工具栏",
+  "selection-show-labels": "显示按钮文字",
+  "selection-hidden-in-more": "隐藏的功能仍可从“更多”和右键菜单使用。启用翻译后显示翻译按钮。",
+  "selection-move-up": "上移",
+  "selection-move-down": "下移",
+
   "welcome-library-title": "打开一本书，就开始",
   "welcome-library-body": "先读一本内置经典，或添加自己的 EPUB、PDF、MOBI。正在读的书，都能从书库继续。",
   "welcome-reading-title": "读得舒服，才读得长久",

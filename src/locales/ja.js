@@ -1,4 +1,10 @@
 export default {
+  "selection-toolbar": "選択ツールバー",
+  "selection-show-labels": "ボタン名を表示",
+  "selection-hidden-in-more": "非表示の操作は「その他」と右クリックメニューから使えます。翻訳を有効にすると翻訳ボタンが表示されます。",
+  "selection-move-up": "上へ",
+  "selection-move-down": "下へ",
+
   "welcome-library-title": "本を開いて始める",
   "welcome-library-body": "内蔵の名作を試すか、EPUB・PDF・MOBI を追加しましょう。読みかけの本はライブラリから再開できます。",
   "welcome-reading-title": "読みやすく整える",

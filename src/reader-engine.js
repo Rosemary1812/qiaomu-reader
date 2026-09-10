@@ -299,10 +299,13 @@ export class EpubEngine {
     async *search(query, opts = {}) {
         if (!this.#view || !query) return;
         const view = this.#view;
-        const clearing = this.clearSearchHits();
+        const paint = opts.paint !== false;
+        const clearing = paint ? this.clearSearchHits() : Promise.resolve();
         const generation = this.#searchGeneration;
         await clearing;
-        const current = () => this.#view === view && generation === this.#searchGeneration;
+        const current = () => this.#view === view && !opts.signal?.aborted && (!paint || generation === this.#searchGeneration);
+        let count = 0;
+        const limit = Math.min(300, Math.max(1, opts.limit || 300));
         if (!current()) return;
         const match = searchMatcher(textWalker, {
             defaultLocale: this.#book?.metadata?.language,
@@ -319,13 +322,13 @@ export class EpubEngine {
             for (const result of match(doc, String(query))) {
                 if (!current()) return;
                 const cfi = view.getCFI(index, result.range);
-                this.#searchHits.push(cfi);
+                if (paint) this.#searchHits.push(cfi);
                 const { pre = "", match: found = "", post = "" } = result.excerpt;
                 const hit = { cfi, index, excerpt: pre + found + post };
-                await view.addAnnotation({ value: SEARCH_PREFIX + cfi });
+                if (paint) await view.addAnnotation({ value: SEARCH_PREFIX + cfi });
                 if (!current()) return;
                 yield hit;
-                if (this.#searchHits.length >= 300) return;
+                if (++count >= limit) return;
             }
         }
     }
