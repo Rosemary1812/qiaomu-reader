@@ -137,9 +137,9 @@ test("PDF zoom correction keeps the pointer's document point despite centered ma
 test("initial layout and reflow scroll events cannot overwrite the saved reading position", () => {
   let saves = 0;
   let updates = 0;
-  const factory = source.slice(source.indexOf("function createReaderPaginator("), source.indexOf("function readerPaginationMappingCollapsed("));
-  const create = vm.runInNewContext(`${factory}\ncreateReaderPaginator`, {
-    Paginator: class { currentBlockIndex() { return 15; } }, clampPdfZoom: () => 1,
+  const factory = source.slice(source.indexOf("function createPdfPaginator("), source.indexOf("function readerPaginationMappingCollapsed("));
+  const create = vm.runInNewContext(`${factory}\ncreatePdfPaginator`, {
+    PdfPaginator: class { currentBlockIndex() { return 15; } }, clampPdfZoom: () => 1,
   });
   const view = { file: { path: "book.epub" }, plugin: { saveProgress() { saves++; } }, updateUI() { updates++; } };
   const pager = create(view);

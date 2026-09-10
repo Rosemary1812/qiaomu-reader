@@ -47,7 +47,7 @@ import { FONT_FILE_ACCEPT, disposeReaderFonts, importedReaderFonts, listSystemFo
 import { normalizeCustomFontFamily, resolveReaderFont, readerTextCss, syncPageButtons } from "./reader-appearance.js";
 import { BUNDLED_FONT_FAMILIES, ensureBundledReaderFont } from "./bundled-fonts.js";
 import { cloneJson, createSerialTaskQueue, isPlainRecord, mergeReadingProgress, readJsonRecordStore, writeVerifiedJsonRecord } from "./storage.js";
-import { createReaderLoadCoordinator, isReaderLoadAbort, throwIfReaderLoadAborted } from "./reader-load.js";
+import { createReaderLoadCoordinator, isReaderLoadAbort, throwIfReaderLoadAborted, waitForReaderFrame } from "./reader-load.js";
 
 // Interface language is local to this plugin; dictionaries are bundled offline.
 let qiaomuReaderLanguage = "zh";
@@ -1818,6 +1818,7 @@ const QiaomuBookReader = class extends Plugin {
       const highlight = highlightId && this.getHighlights(found.path).find((item) => item.id === highlightId);
       if (highlight) { await view.goToHighlight(highlight.id); return; }
       if (cfi && view.engine) { rememberReaderJump(view); await jumpToEngineHighlight(view, { cfi }); return; }
+      if (view.engine) throw new Error("An ebook link requires a CFI location");
       const idx = Number(block);
       if (block !== undefined && block !== "" && Number.isInteger(idx) && idx >= 0) {
         view.jumpToBlockWhenReady(idx);
@@ -2242,7 +2243,8 @@ const QiaomuBookReader = class extends Plugin {
     const last = list[list.length - 1];
     if (last && last.percent === prev.percent) { last.ts = now; return; }
     list.push({ pct: prev.pct, percent: prev.percent, lastRead: prev.lastRead || now, ts: now,
-      ...(typeof prev.block === "number" ? { block: prev.block } : {}) });
+      ...(typeof prev.block === "number" ? { block: prev.block } : {}),
+      ...(prev.cfi ? { cfi: prev.cfi } : {}) });
     if (list.length > 30) list.shift();
   }
   async _loadProgressFromVault() {
@@ -2560,7 +2562,7 @@ const QiaomuBookReader = class extends Plugin {
     while (arr.length > 12) arr.shift();
   }
 };
-const Paginator = class {
+const PdfPaginator = class {
   constructor() {
     this.spread = 0;
     this.total = 0;
@@ -2568,10 +2570,9 @@ const Paginator = class {
     this.pdfZoom = PDF_ZOOM_DEFAULT;
   }
   async build(area, bookHtml, cfg, anchorSpread) {
-    // BRAT ships only main.js / manifest.json / styles.css, so the Chinese
-    // reading fonts are embedded in main.js. They must be active before any
-    // measuring: a font swap after pagination moves line breaks and with them
-    // the reading place.
+    // This paginator accepts PDF page surfaces only. Reflowable ebooks are
+    // rendered and navigated exclusively by EpubEngine.
+    if (!bookHtml.includes('class="qiaomu-reader-pdf-page-break')) throw new Error("PDF page surfaces required");
     await this._ensureFonts(docOf(area), cfg);
     const reuse = !!(this.flow && this.clip && this.flow.parentElement === this.clip
       && this.clip.parentElement === area && this._html === bookHtml);
@@ -2608,7 +2609,7 @@ const Paginator = class {
     else await ensureBundledReaderFont(doc, cfg.fontFamily);
   }
   _nextFrame() {
-    return new Promise((resolve) => window.requestAnimationFrame(resolve));
+    return waitForReaderFrame(window);
   }
   _delay(ms) {
     return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -2704,12 +2705,7 @@ const Paginator = class {
     for (const [prop, value] of flowStyle) this.flow.style.setProperty(prop, value);
   }
   _mountBookHtml(bookHtml, cfg, geo, cjk, reuse) {
-    // The one deliberate whole-markup injection in the reader: an entire
-    // chapter rebuilt on each re-layout, where node-by-node construction
-    // costs a visible pause on long books. Book content cannot smuggle
-    // markup through it — extractEpub/extractPdf emit a fixed tag set and
-    // push every text run through escHtml(); the style block only
-    // interpolates numbers and colours this plugin computes itself.
+    // extractPdf emits sanitized page surfaces; no ebook HTML enters here.
     const markup = `<style>\n${this._bookStyleCss(cfg, geo, cjk)}\n</style>${bookHtml}<div class="qiaomu-reader-end" aria-hidden="true"></div>`;
     if (reuse) return;
     const parser = new DOMParser();
@@ -2720,26 +2716,9 @@ const Paginator = class {
     }
     this._html = bookHtml;
   }
-  _bookStyleCss(cfg, geo, cjk) {
-    const p = geo.sidePad;
-    const pt = geo.padTop;
+  _bookStyleCss(cfg, geo) {
     const innerH = geo.innerHeight;
     return [
-      `.qiaomu-reader-flow p{text-align:${cfg.textAlign || "left"}}`,
-      cjk ? ".qiaomu-reader-flow em,.qiaomu-reader-flow i,.qiaomu-reader-flow cite{font-style:normal}" : "",
-      ".qiaomu-reader-flow .qiaomu-reader-section,.qiaomu-reader-flow .qiaomu-reader-pdf-page-break{display:block;overflow:visible;contain:none;break-inside:auto;-webkit-column-break-inside:auto}",
-      ".qiaomu-reader-flow p,.qiaomu-reader-flow li{break-inside:auto;-webkit-column-break-inside:auto;orphans:1;widows:1}",
-      `.qiaomu-reader-flow p,.qiaomu-reader-flow h1,.qiaomu-reader-flow h2,.qiaomu-reader-flow h3,.qiaomu-reader-flow h4{padding-left:${p}px;padding-right:${p}px;margin:0 0 .6em}`,
-      ".qiaomu-reader-flow h1,.qiaomu-reader-flow h2,.qiaomu-reader-flow h3,.qiaomu-reader-flow h4{margin-top:1.1em}",
-      ".qiaomu-reader-flow h1{font-size:1.55em;line-height:1.35}",
-      ".qiaomu-reader-flow h2{font-size:1.3em;line-height:1.4}",
-      ".qiaomu-reader-flow h3,.qiaomu-reader-flow h4{font-size:1.1em;line-height:1.45}",
-      ".qiaomu-reader-flow p.qiaomu-reader-verse{white-space:pre-wrap;margin-bottom:.15em}",
-      ".qiaomu-reader-flow>p:first-of-type,.qiaomu-reader-flow .qiaomu-reader-section:first-child>p:first-child,"
-        + ".qiaomu-reader-flow .qiaomu-reader-section:first-child>h1:first-child,.qiaomu-reader-flow .qiaomu-reader-section:first-child>h2:first-child,"
-        + `.qiaomu-reader-flow .qiaomu-reader-section:first-child>h3:first-child{padding-top:${pt}px}`,
-      `.qiaomu-reader-flow img{max-width:calc(100% - ${p * 2}px);max-height:${innerH - 12}px;height:auto;width:auto;object-fit:contain;display:block;margin:8px auto;break-inside:avoid;page-break-inside:avoid;-webkit-column-break-inside:avoid}`,
-      ".qiaomu-reader-flow figure{break-inside:avoid;-webkit-column-break-inside:avoid;margin:8px auto}",
       ".qiaomu-reader-flow .qiaomu-reader-pdf-page-break{width:100%;height:100%;box-sizing:border-box;display:flex;align-items:flex-start;justify-content:flex-start;overflow:auto;overscroll-behavior:contain;break-inside:avoid;-webkit-column-break-inside:avoid}",
       ".qiaomu-reader-flow .qiaomu-reader-pdf-page-break:not(.qiaomu-reader-pdf-last-page){break-after:column;-webkit-column-break-after:always}",
       ".qiaomu-reader-flow .qiaomu-reader-pdf-native-page{flex:none;margin:auto;padding:0;max-width:none;max-height:none;text-align:center;position:relative;"
@@ -2769,31 +2748,6 @@ const Paginator = class {
       ".qiaomu-reader-flow .qiaomu-reader-pdf-render-error::after{content:attr(data-pdf-error);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"
         + "padding:24px;box-sizing:border-box;color:#8b1e1e;background:#fff4f3;font:14px/1.5 var(--font-interface)}",
       ".qiaomu-reader-clip-scroll .qiaomu-reader-flow .qiaomu-reader-pdf-page-break{height:auto;min-height:0;padding:12px 0 24px;overflow:visible;break-after:auto}",
-      `.qiaomu-reader-flow pre.qiaomu-reader-code{margin:0 0 .85em;padding:.55em .7em;box-sizing:border-box;`
-        + `max-width:calc(100% - ${p * 2}px);margin-left:${p}px;margin-right:${p}px;`
-        + `white-space:pre-wrap;overflow-wrap:anywhere;tab-size:2;`
-        + `font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;`
-        + `font-size:.8em;line-height:1.45;background:var(--qiaomu-reader-ui);border:1px solid var(--qiaomu-reader-border);`
-        + `border-radius:8px;break-inside:avoid;-webkit-column-break-inside:avoid}`,
-      ".qiaomu-reader-flow pre.qiaomu-reader-code code{font:inherit;background:none;padding:0;color:inherit}",
-      `.qiaomu-reader-flow p.qiaomu-reader-toc-line{display:flex;align-items:baseline;gap:8px;text-align:left !important;`
-        + `margin:0 0 .35em;padding-left:${p}px;padding-right:${p}px}`,
-      ".qiaomu-reader-flow p.qiaomu-reader-toc-line .qiaomu-reader-toc-t{flex:1;min-width:0}",
-      ".qiaomu-reader-flow p.qiaomu-reader-toc-line .qiaomu-reader-toc-n{flex:none;opacity:.65;font-variant-numeric:tabular-nums}",
-      `.qiaomu-reader-flow .qiaomu-reader-side-notes{margin:.2em ${p}px .9em;padding:.5em .8em;border-left:2px solid var(--qiaomu-reader-border);`
-        + `background:color-mix(in srgb,var(--qiaomu-reader-text) 4%,transparent);border-radius:0 8px 8px 0;`
-        + `break-inside:avoid;-webkit-column-break-inside:avoid}`,
-      ".qiaomu-reader-flow .qiaomu-reader-side-notes p{padding:0 !important;margin:0 0 .4em;font-size:.9em;opacity:.85;text-align:left}",
-      ".qiaomu-reader-flow .qiaomu-reader-side-notes p:last-child{margin-bottom:0}",
-      `.qiaomu-reader-flow code{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;`
-        + `font-size:.86em;background:var(--qiaomu-reader-ui);border:1px solid var(--qiaomu-reader-border);border-radius:4px;`
-        + `padding:0 .28em;overflow-wrap:anywhere}`,
-      `.qiaomu-reader-flow table.qiaomu-reader-table{margin:0 ${p}px .9em;border-collapse:collapse;`
-        + `max-width:calc(100% - ${p * 2}px);font-size:.82em;line-height:1.4;`
-        + `break-inside:avoid;-webkit-column-break-inside:avoid}`,
-      ".qiaomu-reader-flow table.qiaomu-reader-table th,.qiaomu-reader-flow table.qiaomu-reader-table td{border:1px solid var(--qiaomu-reader-border);"
-        + "padding:.3em .5em;text-align:left;vertical-align:top;overflow-wrap:anywhere}",
-      ".qiaomu-reader-flow table.qiaomu-reader-table th{background:var(--qiaomu-reader-ui);font-weight:700}",
       ".qiaomu-reader-flow .qiaomu-reader-end{display:block;height:0;margin:0;padding:0;border:0;visibility:hidden}",
     ].join("\n");
   }
@@ -3074,8 +3028,8 @@ const Paginator = class {
     return this.total;
   }
 };
-function createReaderPaginator(view) {
-  const pager = new Paginator();
+function createPdfPaginator(view) {
+  const pager = new PdfPaginator();
   pager.loadFont = (doc, settings) => ensureSelectedReaderFont(doc, view.plugin, settings);
   pager.pdfZoom = clampPdfZoom(view.pdfZoom);
   pager.onSpreadChange = (cur, total) => {
@@ -3382,7 +3336,12 @@ function settleReader(view, delay = 220) {
   }, delay);
 }
 function rememberReaderJump(view) {
-  if (!view.pager?.flow) return;
+  if (view.engine) {
+    const cfi = view.engine.currentLocation()?.cfi;
+    if (cfi) showFootnoteReturn(view, { cfi });
+    return;
+  }
+  if (!readerIsPdf(view) || !view.pager?.flow) return;
   if (!view.pager.scrollMode) view.pager.applyTransform(false);
   const anchor = captureReadingAnchor(view.pager);
   showFootnoteReturn(view, anchor);
@@ -3470,7 +3429,8 @@ function showLocationMarks(view) {
   modal.onOpen = () => {
     const c = modal.contentEl;
     c.empty(); c.createEl("h3", { text: qiaomuReaderTranslate("location-bookmarks") });
-    const marks = normalizeLocationMarks(view.plugin.settings.locationMarks).filter((item) => item.bookPath === view.file?.path);
+    const marks = normalizeLocationMarks(view.plugin.settings.locationMarks).filter((item) => item.bookPath === view.file?.path
+      && (view.engine ? !!item.anchor.cfi : readerIsPdf(view) && !item.anchor.cfi));
     if (!marks.length) c.createDiv({ text: qiaomuReaderTranslate("no-location-bookmarks-yet") });
     const save = async (items) => {
       const previous = view.plugin.settings.locationMarks;
@@ -3482,11 +3442,15 @@ function showLocationMarks(view) {
       const row = c.createDiv("qiaomu-reader-location-mark");
       row.createEl("button", { cls: "qiaomu-reader-location-mark-open", text: mark.title }).addEventListener("click", () => {
         if (view.file?.path !== mark.bookPath) return;
-        const block = view.pager.blockEl(mark.anchor.block);
-        // A changed EPUB must not silently jump to an unrelated paragraph.
-        if (!mark.anchor.pdfPage && mark.excerpt && !block?.textContent.includes(mark.excerpt)) {
-          void jumpToAiQuote(view.plugin, view.file, mark.excerpt); modal.close(); return;
+        if (view.engine) {
+          if (!mark.anchor.cfi) return;
+          rememberReaderJump(view);
+          void jumpToEngineHighlight(view, { cfi: mark.anchor.cfi })
+            .then(() => modal.close())
+            .catch(() => new Notice(qiaomuReaderTranslate("highlight-not-found")));
+          return;
         }
+        if (!readerIsPdf(view)) return;
         rememberReaderJump(view);
         const [cur, total] = restoreReadingAnchor(view.pager, mark.anchor);
         (view.updateUI || view._updateUI).call(view, cur, total);
@@ -3508,12 +3472,16 @@ function showLocationMarks(view) {
 }
 
 function addLocationMark(view) {
-  if (!view.file || !view.pager?.flow) return;
+  if (!view.file || view._openingBook || view._closed) return;
   const file = view.file;
-  const anchor = captureReadingAnchor(view.pager);
-  if (!anchor || !Number.isInteger(anchor.block)) return;
-  const excerpt = view.pager.blockEl(anchor.block)?.textContent.slice(anchor.offset, anchor.offset + 100) || "";
-  const label = readerIsPdf(view) ? qiaomuReaderTranslate("page-0", anchor.pdfPage || 1) : chapterForBlock(view.tocItems || [], anchor.block) || qiaomuReaderTranslate("reading-position");
+  const location = view.engine?.currentLocation();
+  const anchor = view.engine ? (location?.cfi ? { cfi: location.cfi, pct: location.fraction } : null)
+    : readerIsPdf(view) && view.pager?.flow ? captureReadingAnchor(view.pager) : null;
+  if (!anchor) return;
+  const excerpt = view.engine ? view.engine.visibleText().slice(0, 100)
+    : view.pager.blockEl(anchor.block)?.textContent.slice(anchor.offset, anchor.offset + 100) || "";
+  const label = view.engine ? location.tocItem?.label || qiaomuReaderTranslate("reading-position")
+    : qiaomuReaderTranslate("page-0", anchor.pdfPage || 1);
   new ReaderNameModal(view.app, qiaomuReaderTranslate("bookmark-this-location"), label, async (title) => {
     const old = view.plugin.settings.locationMarks;
     view.plugin.settings.locationMarks = normalizeLocationMarks([...normalizeLocationMarks(old), { id: newAiSessionKey(), bookPath: file.path, title, excerpt, anchor }]);
@@ -4331,9 +4299,8 @@ async function qiaomuReaderPaintVeil(view) {
   // A single animation frame still runs before paint. Waiting for the next
   // frame gives Chromium one complete paint opportunity before PDF pagination
   // occupies the main thread for a large fixed-layout document.
-  await new Promise((resolve) => {
-    win.requestAnimationFrame(() => win.requestAnimationFrame(resolve));
-  });
+  await waitForReaderFrame(win);
+  await waitForReaderFrame(win);
 }
 function qiaomuReaderHideVeil(view) {
   if (view && view._veil) {
@@ -4431,6 +4398,14 @@ function showFootnoteReturn(view, spread) {
   pill.setAttribute("role", "button");
   pill.setAttribute("tabindex", "0");
   const go = () => {
+    if (view.engine) {
+      if (!spread?.cfi) return;
+      void jumpToEngineHighlight(view, { cfi: spread.cfi })
+        .then(() => hideFootnoteReturn(view))
+        .catch(() => new Notice(qiaomuReaderTranslate("highlight-not-found")));
+      return;
+    }
+    if (!readerIsPdf(view)) return;
     const [cur, tot] = typeof spread === "object" ? restoreReadingAnchor(view.pager, spread) : view.pager.jumpTo(spread);
     (view.updateUI || view._updateUI).call(view, cur, tot);
     if (view.file) void view.plugin.saveProgress(view.file.path, cur, tot, view.pager.currentBlockIndex());
@@ -6566,9 +6541,14 @@ function buildFindPanelFor(view, panel, { close }) {
     if (!view._searchReturnSaved) { rememberReaderJump(view); view._searchReturnSaved = true; }
     cursor = index;
     if (view.engine && hit.cfi) {
-      void view.engine.goTo(hit.cfi);
-      panel.addClass("qiaomu-reader-find-browsing");
-      update();
+      const engine = view.engine;
+      void engine.goTo(hit.cfi).then(() => {
+        if (view.engine !== engine || view._closed) return;
+        panel.addClass("qiaomu-reader-find-browsing");
+        update();
+      }).catch(() => {
+        if (view.engine === engine && !view._closed) new Notice(qiaomuReaderTranslate("highlight-not-found"));
+      });
       return;
     }
     const [cur, total] = restoreReadingAnchor(view.pager, { block: hit.block, offset: hit.offset, pct: view.pager.currentPct });
@@ -7001,7 +6981,8 @@ function figurePageNumber(img) {
 }
 
 function figureSweepReady(view, lazy) {
-  return Boolean(lazy && view.pager && view.pager.flow);
+  return Boolean(lazy && !lazy._destroyed && !view._closed && view.pager?.flow
+    && docOf(view.pager.flow).visibilityState !== "hidden");
 }
 
 function markFigureUnavailable(img, surface, error) {
@@ -7020,15 +7001,17 @@ function markFigureUnavailable(img, surface, error) {
   console.error(`Qiaomu Reader: could not render PDF page ${pageNumber}`, error);
 }
 
-async function drawFigure(img, lazy) {
+async function drawFigure(img, lazy, current = () => true) {
   const surface = img.closest(FIGURE_SURFACE_SELECTOR);
   if (surface) surface.addClass(FIGURE_RENDERING_CLASS);
   try {
-    img.src = await lazy.render(figurePageNumber(img));
+    const src = await lazy.render(figurePageNumber(img));
+    if (!current()) return;
+    img.src = src;
     if (typeof img.decode === "function") await img.decode().catch(() => {});
     img.setAttribute(FIGURE_LOADED_ATTR, "1");
   } catch (e) {
-    markFigureUnavailable(img, surface, e);
+    if (current()) markFigureUnavailable(img, surface, e);
   } finally {
     if (surface) surface.removeClass(FIGURE_RENDERING_CLASS);
   }
@@ -7042,11 +7025,13 @@ async function sweepReaderFigures(reader, lazy) {
   const vertical = pager.scrollMode;
   const flowRect = flow.getBoundingClientRect();
   const gapOf = (img) => figureSpreadGap(img, flowRect, columnWidth, spread, vertical);
+  const current = () => !reader._closed && reader._pdfLazy === lazy && !lazy._destroyed && reader.pager === pager;
   for (const img of [...flow.querySelectorAll(FIGURE_LAZY_SELECTOR)]) {
+    if (!current()) return;
     const gap = gapOf(img);
     const loadState = img.getAttribute(FIGURE_LOADED_ATTR);
     if (gap <= FIGURE_LOAD_SPAN && loadState !== "1" && loadState !== "skip") {
-      await drawFigure(img, lazy);
+      await drawFigure(img, lazy, current);
     } else if (gap > FIGURE_DROP_SPAN && loadState === "1") {
       if (img.hasAttribute("src")) img.removeAttribute("src");
       img.setAttribute(FIGURE_LOADED_ATTR, "0");
@@ -9316,12 +9301,41 @@ const OnboardingModal = class extends Modal {
     this.contentEl.empty();
   }
 };
+async function navigateEngineToc(reader, href) {
+  const engine = reader.engine;
+  try { await engine.goToTocItem(href); }
+  catch (error) {
+    if (reader.engine !== engine || reader._closed) return;
+    console.warn("Qiaomu Reader: could not navigate to chapter", error);
+    new Notice(qiaomuReaderTranslate("could-not-open-this-book"));
+  }
+}
+async function restoreEngineHistory(reader, snap) {
+  const engine = reader.engine;
+  const path = reader.file?.path;
+  const current = () => reader.engine === engine && reader.file?.path === path && !reader._closed;
+  try {
+    let restored = false;
+    if (snap.cfi) {
+      try { await engine.goTo(snap.cfi); restored = true; }
+      catch { /* old anchors can become invalid after a book is replaced */ }
+    }
+    if (!current()) return;
+    if (!restored) await engine.goToFraction(typeof snap.pct === "number" ? snap.pct : (snap.percent || 0) / 100);
+    if (!current()) return;
+    (reader.closePanel || reader._closePanel)?.call(reader);
+    new Notice(qiaomuReaderTranslate("jumped-back-to-0", snap.percent));
+  } catch (error) {
+    if (!current()) return;
+    console.warn("Qiaomu Reader: could not restore reading history", error);
+    new Notice(qiaomuReaderTranslate("could-not-open-this-book"));
+  }
+}
 async function persistCurrentReaderPosition(reader) {
-  if (!(reader && reader.plugin && reader.file && reader.bookHtml && reader.pager)) return;
+  if (!(reader && reader.plugin && reader.file && reader.bookHtml && reader.pager) || reader._openingBook) return;
   // An engine book has no legacy pager geometry. Never replace its CFI with
   // the empty pager's 0/1 position, including close during an unfinished load.
   if (reader.engine || reader.bookHtml === "engine") {
-    if (reader._openingBook) return;
     const location = reader.engine?.currentLocation() || reader._engineLocation;
     if (location?.cfi && Number.isFinite(location.fraction)) {
       await reader.plugin.saveEngineProgress(reader.file.path, location.fraction, location.cfi);
@@ -9396,7 +9410,7 @@ const ReaderView = class extends ItemView {
     this.ext = null;
     this.plugin = plugin;
     this.pdfZoom = PDF_ZOOM_DEFAULT;
-    this.pager = createReaderPaginator(this);
+    this.pager = createPdfPaginator(this);
     this._loadCoordinator = createReaderLoadCoordinator();
     this.bookHtml = "";
     this.pdfDocumentContext = null;
@@ -9438,6 +9452,7 @@ const ReaderView = class extends ItemView {
   }
   async onOpen() { // chrome, resize watching and workspace hooks
     this.buildDOM();
+    this.registerDomEvent(docOf(this.contentEl), "visibilitychange", () => renderVisibleFigures(this));
     const obs = this._resizeObs = new ResizeObserver(() => this._onAreaResized());
     obs.observe(this.areaEl);
     this.registerEvent(this.app.workspace.on("layout-change", () => this._repaginateWhenWidthStale()));
@@ -9471,6 +9486,7 @@ const ReaderView = class extends ItemView {
   _onLeafSwitch(leaf) {
     if (leaf === this.leaf) {
       this._repaginateWhenWidthStale();
+      void renderVisibleFigures(this);
       syncOpenAiReaderContext(this);
       void this.plugin._showCompanionForBook(this);
       return;
@@ -9523,7 +9539,7 @@ const ReaderView = class extends ItemView {
     this.buildFindPanel(); this.bookHtml = "";
     this.pdfDocumentContext = null; this.tocItems = [];
     this._disposePdfLazy();
-    this.pager = createReaderPaginator(this); this._pdfOutline = null;
+    this.pager = createPdfPaginator(this); this._pdfOutline = null;
     this.pdfZoom = PDF_ZOOM_DEFAULT;
     this.pager.pdfZoom = this.pdfZoom;
     if (this.aiBtn) this.aiBtn.hidden = true;
@@ -9552,7 +9568,7 @@ const ReaderView = class extends ItemView {
     return label;
   }
   _waitFrame() {
-    return new Promise((resolve) => window.requestAnimationFrame(resolve));
+    return waitForReaderFrame(window);
   }
   async _loadBookIntoView(file, loadToken, statusLabel) {
     let result = null;
@@ -9695,10 +9711,12 @@ const ReaderView = class extends ItemView {
   // from the previous pipeline are intentionally not drawn here.
   _renderEngineHighlights() {
     if (!this.engine || !this.file) return;
+    const engine = this.engine, path = this.file.path;
     void (async () => {
-      for (const hl of this.plugin.getHighlights(this.file.path)) {
+      for (const hl of this.plugin.getHighlights(path)) {
+        if (this._closed || this.engine !== engine || this.file?.path !== path) return;
         if (!hl.cfi) continue;
-        try { await this.engine.addHighlight(hl.id, hl.cfi, hl.color); }
+        try { await engine.addHighlight(hl.id, hl.cfi, hl.color); }
         catch { /* the section holding that CFI may not be rendered yet */ }
       }
     })();
@@ -9737,7 +9755,7 @@ const ReaderView = class extends ItemView {
     this.areaEl.empty();
     let w = this.areaEl.clientWidth, a = 0;
     while (!w && a < 60) {
-      await new Promise((r) => window.requestAnimationFrame(r));
+      await waitForReaderFrame(docOf(this.areaEl).defaultView);
       if (!current()) return;
       w = this.areaEl.clientWidth;
       a++;
@@ -9822,7 +9840,7 @@ const ReaderView = class extends ItemView {
     clearFoundIn(this);
   }
   _jumpToBlock(block, flash = true) {
-    if (!this.bookHtml || typeof block !== "number") return;
+    if (!readerIsPdf(this) || !this.bookHtml || typeof block !== "number") return;
     rememberReaderJump(this);
     const [cur, tot] = restoreReadingAnchor(this.pager, { block, offset: 0, pct: this.pager.currentPct });
     this.updateUI(cur, tot);
@@ -9842,13 +9860,14 @@ const ReaderView = class extends ItemView {
   async repaginate() {
     if (!this.bookHtml || this._openingBook || this._closed) return;
     if (this.engine) { this.applyVars(); this._setRelayout(false); return; }
+    if (!readerIsPdf(this)) return;
     if (!this.areaEl.clientWidth || this.containerEl.offsetParent === null) return;
     return queueReadingLayout(this, (anchor) => this._repaginateAnchored(anchor));
   }
   async _repaginateAnchored(anchor) {
     this._setRelayout(true); qiaomuReaderShowVeil(this);
     try {
-      await new Promise((done) => window.requestAnimationFrame(done));
+      await waitForReaderFrame(docOf(this.areaEl).defaultView);
       this.areaEl.empty(); const pager = this.pager;
       await pager.build(this.areaEl, this.bookHtml, this.plugin.settings, 0);
       if (pager !== this.pager || !this.bookHtml || this._closed) return;
@@ -10118,7 +10137,10 @@ const ReaderView = class extends ItemView {
     chip.addEventListener("click", () => this._restoreHistorySnapshot(snap));
   }
   _restoreHistorySnapshot(snap) {
-    if (!this.bookHtml) return; const total = this.pager.total;
+    if (!this.bookHtml || this._openingBook) return;
+    if (this.engine) { void restoreEngineHistory(this, snap); return; }
+    if (!readerIsPdf(this)) return;
+    const total = this.pager.total;
     const spread = typeof snap.block === "number" && snap.block >= 0
       ? this.pager.spreadForBlock(snap.block)
       : Math.round((typeof snap.pct === "number" ? snap.pct : (snap.percent || 0) / 100) * Math.max(0, total - 1));
@@ -10131,7 +10153,7 @@ const ReaderView = class extends ItemView {
       close: () => this.closePanel(),
       jump: (item) => {
         if (this.engine && item && typeof item === "object" && item.href) {
-          void this.engine.goToTocItem(item.href);
+          void navigateEngineToc(this, item.href);
           return;
         }
         this._jumpToBlock(item && typeof item === "object" ? item.block : item);
@@ -11131,7 +11153,7 @@ const ReaderModal = class extends Modal {
     this.file    = file;
     this.ext     = file.extension;
     this.pdfZoom = PDF_ZOOM_DEFAULT;
-    this.pager = createReaderPaginator(this);
+    this.pager = createPdfPaginator(this);
     this._loadCoordinator = createReaderLoadCoordinator();
     this._closed = false;
     this.bookHtml = "";
@@ -11152,7 +11174,12 @@ const ReaderModal = class extends Modal {
     contentEl.addClass("qiaomu-reader-fullscreen-content");
     this._applyTopInset(contentEl);
     this._installCloseGuard(modalEl);
-    this._applyTheme(); this._buildDOM(); await this._loadBook();
+    this._applyTheme(); this._buildDOM();
+    const visibilityDoc = docOf(this.contentEl);
+    const onVisible = () => { void renderVisibleFigures(this); };
+    visibilityDoc.addEventListener("visibilitychange", onVisible);
+    this._visibilityCleanup = () => visibilityDoc.removeEventListener("visibilitychange", onVisible);
+    await this._loadBook();
     if (this._closed) return;
     this._startReadingSession();
     this._installResizeWatch();
@@ -11352,7 +11379,8 @@ const ReaderModal = class extends Modal {
     this._pdfLazy?.destroy?.(); this._pdfLazy = null;
   }
   _waitTwoFrames() {
-    return new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+    const win = docOf(this.areaEl).defaultView;
+    return waitForReaderFrame(win).then(() => waitForReaderFrame(win));
   }
   async _openLoadedDocument(result, loadToken) {
     if (result.engine) {
@@ -11429,7 +11457,7 @@ const ReaderModal = class extends Modal {
     new BookSetupModal(this.app, this.plugin, file, () => {}).open();
   }
   _jumpToBlock(block, flash = true) {
-    if (!this.bookHtml) return;
+    if (!readerIsPdf(this) || !this.bookHtml || typeof block !== "number") return;
     rememberReaderJump(this);
     const [cur, tot] = restoreReadingAnchor(this.pager, { block, offset: 0, pct: this.pager.currentPct });
     this._updateUI(cur, tot);
@@ -11582,10 +11610,12 @@ const ReaderModal = class extends Modal {
   }
   _renderEngineHighlights() {
     if (!this.engine || !this.file) return;
+    const engine = this.engine, path = this.file.path;
     void (async () => {
-      for (const hl of this.plugin.getHighlights(this.file.path)) {
+      for (const hl of this.plugin.getHighlights(path)) {
+        if (this._closed || this.engine !== engine || this.file?.path !== path) return;
         if (!hl.cfi) continue;
-        try { await this.engine.addHighlight(hl.id, hl.cfi, hl.color); }
+        try { await engine.addHighlight(hl.id, hl.cfi, hl.color); }
         catch { /* that section may not be rendered yet */ }
       }
     })();
@@ -11668,7 +11698,10 @@ const ReaderModal = class extends Modal {
     return `${snap.percent}% · ${stamp.toLocaleString(qiaomuReaderLocale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`;
   }
   _restoreHistorySnapshot(snap) {
-    if (!this.bookHtml) { return; } this._closePanel();
+    if (!this.bookHtml || this._openingBook) return;
+    if (this.engine) { void restoreEngineHistory(this, snap); return; }
+    if (!readerIsPdf(this)) return;
+    this._closePanel();
     const hasBlockSnap = typeof snap.block === "number" && snap.block >= 0;
     if (hasBlockSnap) { this._jumpToBlock(snap.block); } else {
       const hasPctSnap = typeof snap.pct === "number";
@@ -11683,7 +11716,13 @@ const ReaderModal = class extends Modal {
   _buildTocPanel() {
     this._tocRender = buildTocPanelFor(this, this.tocPan, {
       close: () => this._closePanel(),
-      jump: (item) => this._jumpToBlock(item && typeof item === "object" ? item.block : item),
+      jump: (item) => {
+        if (this.engine && item && typeof item === "object" && item.href) {
+          void navigateEngineToc(this, item.href);
+          return;
+        }
+        this._jumpToBlock(item && typeof item === "object" ? item.block : item);
+      },
     });
   }
   _buildFindPanel() {
@@ -11873,6 +11912,7 @@ const ReaderModal = class extends Modal {
     listenDoc.removeEventListener("selectionchange", handler);
   }
   _detachReaderObservers() {
+    this._visibilityCleanup?.(); this._visibilityCleanup = null;
     this._resizeObs?.disconnect(); this._pdfLazy?.destroy?.(); this._pdfLazy = null;
     window.clearTimeout(this._rsT); window.clearTimeout(this._selTimer);
     window.clearTimeout(this._immTimer); window.clearTimeout(this._revealT); this._closeWatch?.disconnect();

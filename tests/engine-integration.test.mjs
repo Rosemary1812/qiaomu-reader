@@ -339,3 +339,150 @@ test("initial navigation recovers stale CFIs and hidden-tab no-ops without accep
   assert.equal(fallback, false);
   dom.window.close();
 });
+
+test("closing an unfinished PDF never replaces the last saved position with page one", async () => {
+  const persist = vm.runInNewContext(`${functionSource("persistCurrentReaderPosition")}\npersistCurrentReaderPosition`);
+  let writes = 0;
+  await persist({ file: { path: "book.pdf" }, bookHtml: "pdf", _openingBook: {}, pager: { total: 1, spread: 0 },
+    plugin: { getProgress: () => ({ pct: .8 }), saveProgress: () => writes++ } });
+  assert.equal(writes, 0);
+});
+
+test("pending highlight restoration cannot paint the next book in either reader", async () => {
+  const methods = [...source.matchAll(/  _renderEngineHighlights\(\) \{[\s\S]*?\n  \}/g)];
+  assert.equal(methods.length, 2);
+  for (const [method] of methods) {
+    const render = vm.runInNewContext(`({${method}})._renderEngineHighlights`, {
+    });
+    let release; const painted = [];
+    const old = { addHighlight: () => new Promise(resolve => { release = resolve; }) };
+    const view = { engine: old, file: { path: "old.epub" }, plugin: { getHighlights: () => [
+      { id: "one", cfi: "one" }, { id: "two", cfi: "two" },
+    ] } };
+    render.call(view);
+    view.engine = { addHighlight: id => painted.push(id) }; view.file = { path: "new.epub" };
+    release(); await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(painted, []);
+  }
+});
+
+test("mobile TOC passes ebook hrefs to the engine instead of the empty PDF pager", () => {
+  const start = source.indexOf("  _buildTocPanel() {", source.indexOf("const ReaderModal"));
+  const end = source.indexOf("\n  }", start) + 4;
+  let jump; const targets = [];
+  const method = vm.runInNewContext(`({${source.slice(start, end)}})._buildTocPanel`, {
+    buildTocPanelFor: (_view, _panel, options) => { jump = options.jump; },
+    navigateEngineToc: (view, target) => view.engine.goToTocItem(target),
+  });
+  method.call({ engine: { goToTocItem: target => targets.push(target) }, _jumpToBlock: () => assert.fail("legacy pager used"),
+    _closePanel() {}, _navigateEngineToc: target => targets.push(target) });
+  jump({ href: "chapter2.xhtml", label: "Chapter 2" });
+  assert.deepEqual(targets, ["chapter2.xhtml"]);
+});
+
+test("history restoration uses CFI with percentage fallback and never reports success after switching books", async () => {
+  const notices = [], calls = [];
+  const restore = vm.runInNewContext(`${functionSource("restoreEngineHistory")}\nrestoreEngineHistory`, {
+    Notice: class { constructor(message) { notices.push(message); } }, qiaomuReaderTranslate: key => key, console,
+  });
+  const view = { file: { path: "book.epub" }, engine: {
+    goTo: async cfi => { calls.push(cfi); if (cfi === "stale") throw new Error("stale"); },
+    goToFraction: async fraction => calls.push(fraction),
+  }, closePanel: () => calls.push("close") };
+  await restore(view, { cfi: "valid", pct: .6, percent: 60 });
+  assert.deepEqual(calls, ["valid", "close"]);
+  calls.length = 0;
+  await restore(view, { cfi: "stale", pct: .6, percent: 60 });
+  assert.deepEqual(calls, ["stale", .6, "close"]);
+  calls.length = 0; notices.length = 0;
+  let release;
+  view.engine.goTo = () => new Promise(resolve => { release = resolve; });
+  const pending = restore(view, { cfi: "valid", pct: .6 });
+  view.file = { path: "another.epub" }; release(); await pending;
+  assert.deepEqual(calls, []); assert.deepEqual(notices, []);
+});
+
+test("engine reopening releases the previous parser; invalid navigation cannot claim success", async () => {
+  const dom = new JSDOM("<body><main></main></body>", { runScripts: "outside-only" });
+  const elements = foliateElements(root);
+  const { EpubEngine } = evaluate(dom, await bundle(elements));
+  const View = dom.window.customElements.get(JSON.parse(elements.define.__QBR_ENGINE_VIEW_TAG__));
+  let disposed = 0, moves = 0;
+  View.prototype.open = async function () { this.book = { sections: [{}, {}], destroy: () => disposed++ }; };
+  View.prototype.init = async function () {
+    this.lastLocation = { cfi: "valid" };
+    this.renderer = { getContents: () => [{ index: 0, doc: dom.window.document }] };
+  };
+  View.prototype.close = function () {};
+  View.prototype.resolveNavigation = target => ({ index: target === "bad" ? 999 : 1 });
+  View.prototype.goTo = async function (target) { moves++; return this.resolveNavigation(target); };
+  const engine = new EpubEngine(dom.window.document.querySelector("main"));
+  try {
+    await engine.open(new Uint8Array(), "one.epub");
+    await engine.open(new Uint8Array(), "two.epub");
+    assert.equal(disposed, 1);
+    await assert.rejects(engine.goTo("bad"), /location/);
+    assert.equal(moves, 0, "out-of-range section must never reach renderer");
+    await assert.rejects(engine.goTo("valid-but-noop"), /location/);
+    await assert.rejects(engine.goToFraction(NaN), /location/);
+  } finally { engine.destroy(); dom.window.close(); }
+  assert.equal(disposed, 2);
+});
+
+test("ebook bookmarks capture the engine CFI without requiring a PDF flow", async () => {
+  const { normalizeLocationMarks } = await import('../src/reading-workflow.js');
+  let save;
+  const add = vm.runInNewContext(`${functionSource("addLocationMark")}\naddLocationMark`, {
+    ReaderNameModal: class { constructor(_app, _title, _label, callback) { save = callback; } open() {} },
+    qiaomuReaderTranslate: key => key, newAiSessionKey: () => 'bookmark-one', normalizeLocationMarks,
+    readerIsPdf: () => false,
+  });
+  const view = { file: { path: "Book.epub" }, engine: {
+    currentLocation: () => ({ cfi: "epubcfi(/6/4!/4/2)", fraction: .4, tocItem: { label: "Chapter" } }),
+    visibleText: () => "The bookmarked passage",
+  }, plugin: { settings: {}, saveAll: async () => {} } };
+  add(view); assert.ok(save); await save('My bookmark');
+  const [mark] = view.plugin.settings.locationMarks;
+  assert.equal(mark.anchor.cfi, "epubcfi(/6/4!/4/2)");
+  assert.equal(mark.anchor.block, undefined);
+  assert.equal(mark.excerpt, 'The bookmarked passage');
+  assert.deepEqual(normalizeLocationMarks([mark]), [mark]);
+});
+
+test("background frame waits finish and clear callbacks even when RAF is suspended", async () => {
+  const { waitForReaderFrame } = await import('../src/reader-load.js');
+  for (const visible of [true, false]) {
+    let tick, paint; const cancelled = [], cleared = [];
+    const pending = waitForReaderFrame({ setTimeout: fn => { tick = fn; return 1; },
+      clearTimeout: id => cleared.push(id), requestAnimationFrame: fn => { paint = fn; return 2; },
+      cancelAnimationFrame: id => cancelled.push(id) });
+    (visible ? paint : tick)(); await pending;
+    assert.deepEqual(cancelled, [2]); assert.deepEqual(cleared, [1]);
+  }
+});
+
+test("a PDF render finishing after a book switch cannot paint stale pages or start remaining pages", async () => {
+  const dom = new JSDOM('<main><img data-pdf-page="1"><img data-pdf-page="2"></main>');
+  let release, rendered = 0;
+  const flow = dom.window.document.querySelector('main');
+  const lazy = { render: () => { rendered++; return new Promise(resolve => { release = resolve; }); } };
+  const view = { pager: { flow, sw: 600, spread: 0 }, _pdfLazy: lazy };
+  const sweep = vm.runInNewContext(`${functionSource('drawFigure')}\n${functionSource('sweepReaderFigures')}\nsweepReaderFigures`, {
+    FIGURE_SURFACE_SELECTOR: '.surface', FIGURE_LAZY_SELECTOR: 'img', FIGURE_LOADED_ATTR: 'data-loaded',
+    FIGURE_LOAD_SPAN: 2, FIGURE_DROP_SPAN: 6,
+    figureSpreadGap: () => 0, figurePageNumber: img => Number(img.dataset.pdfPage),
+    markFigureUnavailable: () => assert.fail('stale error shown'),
+  });
+  const pending = sweep(view, lazy);
+  view._pdfLazy = {}; release('data:image/png;base64,stale'); await pending;
+  assert.equal(rendered, 1);
+  assert.equal(flow.querySelector('img').hasAttribute('src'), false);
+  dom.window.close();
+});
+
+test("the PDF paginator rejects ebook HTML before layout or parsing", async () => {
+  const start = source.indexOf('const PdfPaginator = class');
+  const end = source.indexOf('function createPdfPaginator(', start);
+  const PdfPaginator = vm.runInNewContext(`${source.slice(start, end)}\nPdfPaginator`, { PDF_ZOOM_DEFAULT: 1 });
+  await assert.rejects(new PdfPaginator().build({}, '<p>ebook text</p>', {}, 0), /PDF page surfaces required/);
+});
