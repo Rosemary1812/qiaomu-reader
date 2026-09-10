@@ -17,7 +17,7 @@ Qiaomu Reader 是中文优先的 Obsidian EPUB、PDF、FB2、MOBI、AZW3 和 CBZ
 
 [安装与快速开始](#安装) · [功能导览](#功能导览) · [构建验证](https://github.com/joeseesun/qiaomu-reader/actions) · [GPL-3.0 许可](LICENSE)
 
-**截图说明：**下方截图来自此前的 4.1.0 演示构建，部分布局已更新。当前可安装版本见 [官方插件页](https://community.obsidian.md/plugins/qiaomu-reader)，更新记录见 [GitHub Releases](https://github.com/joeseesun/qiaomu-reader/releases)。
+**截图说明：** 下方截图来自此前的 4.1.0 演示构建，部分布局已更新。当前可安装版本见 [官方插件页](https://community.obsidian.md/plugins/qiaomu-reader)，更新记录见 [GitHub Releases](https://github.com/joeseesun/qiaomu-reader/releases)。
 
 截图来自 Computer Use 操作的真实 Obsidian 1.13.7，使用原创演示书和明确标注的示例对话，不含私人仓库或商业书籍页面；示例回答不是模型效果或速度评测。详见[截图与验证说明](docs/showcase.md)。
 
