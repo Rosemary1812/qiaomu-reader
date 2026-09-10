@@ -5,8 +5,8 @@ import JSZip from "jszip";
 import { JSDOM } from "jsdom";
 import { createStarterLibraryInstaller } from "../src/starter-library.js";
 
-function setup() {
-  const files = new Map(); let state; let failPath; let savesFail = false;
+function setup(initialState) {
+  const files = new Map(); let state = initialState; let failPath; let savesFail = false;
   const vault = {
     getAbstractFileByPath: p => files.get(p),
     async createFolder(p) { files.set(p, { children: [] }); },
@@ -18,7 +18,6 @@ function setup() {
   };
   const ensure = createStarterLibraryInstaller({
     vault, books: ["one", "two"].map(id=>({filename:id+".epub",data:btoa(id)})),
-    hasBooks: () => [...files.keys()].some(p=>p.endsWith(".epub")),
     getState: () => state,
     saveState: async s => { if (savesFail) throw Error("settings read only"); state=s; },
     getFolder: () => "Books/Starter Library",
@@ -41,11 +40,40 @@ test("first empty library gets offline books once; concurrent opens do not dupli
 test("existing libraries and same-name files are not overwritten", async () => {
   const s=setup(); const original={bytes:new Uint8Array([42]).buffer};
   s.files.set("Books/Starter Library/one.epub",original);
-  assert.deepEqual(await s.ensure(),[]);
-  assert.equal(s.state().skipped,true);
-  const added=await s.ensure(true);
+  s.files.set("Attachments/existing.pdf", { bytes: new Uint8Array([7]).buffer });
+  const added=await s.ensure();
   assert.equal(added.length,1);
   assert.equal(s.files.get("Books/Starter Library/one.epub"),original);
+  assert.equal(s.state().skipped,undefined);
+  assert.ok(s.files.has("Attachments/existing.pdf"));
+});
+
+test("upgrade repairs legacy skipped installs once without changing other books", async () => {
+  const s = setup({ version: 1, skipped: true });
+  const original = { bytes: new Uint8Array([42]).buffer };
+  s.files.set("Existing/book.mobi", original);
+  assert.equal((await s.ensure()).length, 2);
+  assert.equal(s.files.get("Existing/book.mobi"), original);
+  assert.deepEqual(s.state(), { version: 1, folder: "Books/Starter Library" });
+  s.files.delete("Books/Starter Library/one.epub");
+  assert.deepEqual(await s.ensure(), [], "later deletion stays respected");
+});
+
+test("failed skipped-state repair resumes in the journaled folder", async () => {
+  const s = setup({ version: 1, skipped: true, pending: true, folder: "Books/Original" });
+  s.fail("Books/Original/two.epub");
+  await assert.rejects(s.ensure(), /read only/);
+  const first = s.files.get("Books/Original/one.epub");
+  s.fail();
+  assert.deepEqual(await s.ensure(), ["Books/Original/two.epub"]);
+  assert.equal(s.files.get("Books/Original/one.epub"), first);
+  assert.deepEqual(s.state(), { version: 1, folder: "Books/Original" });
+});
+
+test("interrupted explicit restore retries even after an earlier successful install", async () => {
+  const s = setup({ version: 1, pending: true, folder: "Books/Original" });
+  assert.equal((await s.ensure()).length, 2);
+  assert.equal(s.state().pending, undefined);
 });
 
 test("partial installation resumes without replacing completed files", async () => {

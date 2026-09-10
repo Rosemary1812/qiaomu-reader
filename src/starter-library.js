@@ -1,18 +1,16 @@
-// Starter books are installed once, on the first empty-library visit. Keep an
+// Starter books are installed once, on the first library visit. Keep an
 // installation journal so partial failures resume without overwriting files.
 export function findStarterBook(metadata, books) {
   return books.find(book => metadata?.identifier === `urn:qbr:starter:${book.id}`);
 }
 
-export function createStarterLibraryInstaller({ vault, books, hasBooks, getState, saveState, getFolder }) {
+export function createStarterLibraryInstaller({ vault, books, getState, saveState, getFolder }) {
   let pending;
   const install = async (explicit) => {
     const state = getState() || {};
-    if (!explicit && state.version === 1) return [];
-    if (!explicit && !state.pending && hasBooks()) {
-      await saveState({ version: 1, skipped: true });
-      return [];
-    }
+    // Older versions marked non-empty vaults as skipped without installing.
+    // Repair that state once, but never recreate books deleted after installation.
+    if (!explicit && state.version === 1 && !state.skipped && !state.pending) return [];
     const folder = state.pending && state.folder || getFolder();
     await saveState({ ...state, pending: true, folder });
     const parts = folder.split("/").filter(Boolean);

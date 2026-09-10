@@ -74,7 +74,9 @@ PDF 保留原始版式，支持独立缩放。有可靠文字层时，可选择�
 
 ## 离线示例书
 
-首次书库体验包含六本纯文本 EPUB 示例书：道德经、唐诗三百首、世说新语、Jekyll and Hyde、Alice in Wonderland 和 Meditations。英语作品保留英语版本，无现代中文译本。文件随插件打包，运行时不从古腾堡下载；这些版本在美国属于公版，其他地区需按当地版权规则判断。书籍保留 Project Gutenberg 的完整许可，与插件 GPL 许可分开，详见[版本、来源与许可](assets/starter-books/README.md)。
+从 4.2.5 起，首次打开书库会自动加入六本 EPUB 示例书，即使仓库已有书籍或 PDF 附件。此前被旧版自动跳过的安装也会在打开书库时补齐；不会覆盖同名文件，已经成功导入后主动删除的示例书不会再次自动添加。也可在设置 → 存储与同步 → 添加示例书中手动恢复。
+
+六本示例书的正文均无插图，配有封面：道德经、唐诗三百首、世说新语、Jekyll and Hyde、Alice in Wonderland 和 Meditations。英语作品保留英语版本，无现代中文译本。文件随插件打包，运行时不从古腾堡下载；这些版本在美国属于公版，其他地区需按当地版权规则判断。书籍保留 Project Gutenberg 的完整许可，与插件 GPL 许可分开，详见[版本、来源与许可](assets/starter-books/README.md)。
 
 ## 安装
 
@@ -239,6 +241,8 @@ Qiaomu Reader is a Chinese-first reader for Obsidian supporting EPUB, PDF, FB2, 
 ### A reading workflow, not just a chat window
 
 The five screenshots above show the published **4.2.4** release running in Obsidian 1.13.7: **the six-book starter library, selection actions, linked highlighting notes, optional AI assistance, and original PDF pages.** New users can start with Tao Te Ching, Three Hundred Tang Poems, Shishuo Xinyu, Alice in Wonderland, Jekyll and Hyde, or Meditations without finding a book or configuring AI first. The library includes covers, reading progress, highlight counts and note links.
+
+Since 4.2.5, the first library visit adds all six starter books even when the vault already contains ebooks or PDF attachments. Upgrades also repair installations previously skipped by older versions. Existing same-name files are preserved, and books deliberately deleted after a successful import are not recreated automatically. Use Settings → Storage & sync → Add starter books to restore them manually.
 
 Captures use an isolated demo vault, bundled public-domain books and an original sample PDF. The AI conversation is a visibly labeled fixture with no model call; it demonstrates the interface, not model quality or latency. See [capture and release evidence](docs/showcase.md).
 
