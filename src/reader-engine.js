@@ -83,7 +83,7 @@ export async function restoreEngineLocation(view, opts = {}, isCurrent = () => t
         assertCurrent();
         return rendered();
     };
-    if (await attempt(() => view.init({ lastLocation: opts.initialCfi || undefined }))) return;
+    if (await attempt(() => view.init({ lastLocation: opts.initialCfi || (fraction === null ? undefined : { fraction }) }))) return;
     if (fraction !== null && await attempt(() => view.goToFraction(fraction))) return;
     // Use an explicit chapter target: next() can be a no-op while a newly
     // created Obsidian tab is still hidden and has zero layout dimensions.

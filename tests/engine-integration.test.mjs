@@ -327,6 +327,12 @@ test("initial navigation recovers stale CFIs and hidden-tab no-ops without accep
     if (scenario.fails) await assert.rejects(pending, /Could not load/); else await pending;
     assert.deepEqual(calls, scenario.calls);
   }
+  const legacy = {
+    renderer: { getContents: () => [{ doc: dom.window.document }] },
+    async init({ lastLocation }) { assert.equal(lastLocation.fraction, .015); this.lastLocation = { cfi: "legacy-restored" }; },
+    async goToTextStart() { assert.fail("legacy progress should not reset to the beginning"); },
+  };
+  await restoreEngineLocation(legacy, { initialFraction: .015 });
   let current = true, fallback = false;
   const closed = { init: async () => { current = false; }, goToTextStart: async () => { fallback = true; } };
   await assert.rejects(restoreEngineLocation(closed, {}, () => current), { name: "AbortError" });
