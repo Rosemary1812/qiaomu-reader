@@ -9,7 +9,9 @@
 
 也可以在 Obsidian 中进入 **设置 → 第三方插件 → 浏览**，搜索 **Qiaomu Reader**，选择作者为 **向阳乔木** 的插件。首次使用第三方插件时，先按提示开启社区插件。[完整安装步骤](#安装)
 
-![真实 Obsidian：左侧中文 EPUB 阅读，右侧 AI 对话展示表格、任务列表与常驻快捷问题](docs/assets/showcase-reader-ai.jpg)
+![Qiaomu Reader 4.2.4 内置书库：六本中英文公版电子书，包含真实封面、继续阅读、划线数量与阅读笔记入口](docs/assets/showcase-4.2.4-library.jpg)
+
+**安装后，书架里就有六本书。** 从《道德经》《唐诗三百首》《世说新语》或三本英文经典开始，直接体验阅读、划线和做笔记，无需先找书或配置 AI。
 
 Qiaomu Reader 是中文优先的 Obsidian EPUB、PDF、FB2、MOBI、AZW3 和 CBZ 阅读器。它把**舒适阅读 → 就地提问 → 保存笔记 → 返回原文**放在同一个工作流里，减少在阅读器、聊天窗口和笔记应用之间来回复制。
 
@@ -17,9 +19,7 @@ Qiaomu Reader 是中文优先的 Obsidian EPUB、PDF、FB2、MOBI、AZW3 和 CBZ
 
 [安装与快速开始](#安装) · [功能导览](#功能导览) · [构建验证](https://github.com/joeseesun/qiaomu-reader/actions) · [GPL-3.0 许可](LICENSE)
 
-**截图说明：** 下方截图来自此前的 4.1.0 演示构建，部分布局已更新。当前可安装版本见 [官方插件页](https://community.obsidian.md/plugins/qiaomu-reader)，更新记录见 [GitHub Releases](https://github.com/joeseesun/qiaomu-reader/releases)。
-
-截图来自 Computer Use 操作的真实 Obsidian 1.13.7，使用原创演示书和明确标注的示例对话，不含私人仓库或商业书籍页面；示例回答不是模型效果或速度评测。详见[截图与验证说明](docs/showcase.md)。
+**截图版本：4.2.4。** 以下五张截图均来自安装正式 Release 文件的 Obsidian 1.13.7，展示内置书架、选文操作、划线笔记、AI 助读和 PDF 原页。使用隔离演示仓库、公版示例书与原创 PDF；AI 对话明确标注为界面演示，未调用模型。详见[截图与版本核验](docs/showcase.md)。
 
 ## 你会得到什么
 
@@ -40,41 +40,37 @@ Qiaomu Reader 是中文优先的 Obsidian EPUB、PDF、FB2、MOBI、AZW3 和 CBZ
 
 ## 功能导览
 
-### 1. 书、问题和想法，留在同一处
+### 1. 从书架开始，接着上次的位置读
 
-上方主图展示阅读区与右侧 AI 助读。选中一句话可以围绕选文追问，不选择时可使用当前页；文本型 PDF 默认使用可提取的整书内容。来源随每条已发送问题保存，翻页或切换书籍不会悄悄改写旧问题的来源。
+首页主图展示插件内置的六本中英文公版书，每本都有封面。书库提供继续阅读、搜索、阅读状态和“有划线”筛选；书名下方直接显示划线数量与阅读笔记入口。也可以添加自己的 EPUB、PDF、MOBI 等图书。
 
-新建对话、历史搜索和重命名、停止生成、重新生成、复制回答、回到最新消息都保留。内置快捷问题出现在输入框上方，非中文选文增加翻译入口。已打开 AI 助读时，新选文自动更新待提问上下文；选中本身不会发送请求。模型配置留在设置里，不占据主要阅读空间。
+### 2. 选中一句话，就地划线、批注或提问
 
-### 2. 保存的是回答，不是又抄一次原文
+![4.2.4 选文工具栏：划线与颜色下拉、批注、问 AI、复制；正文使用青瓷主题与双页布局](docs/assets/showcase-4.2.4-selection.jpg)
 
-![保存 AI 回答：自动生成可编辑标题，可保存独立笔记或追加到本书笔记](docs/assets/showcase-save-answer.jpg)
+选中文字，常用操作出现在选文旁边；右键也能使用这些功能。划线颜色通过下拉菜单切换，三种颜色使用统一样式。朱雀仿宋随插件离线提供，也可选择本机字体或导入字体文件；主题、字号、行距与单/双页布局可在阅读设置中调整。书页背景覆盖阅读区域，工具栏跟随 Obsidian。
 
-回答里的表格、任务列表和完整 Markdown 都进入笔记正文；引用原文放在文末。标题根据内容在本地提取，不增加一次模型调用。保存后继续读、继续聊，需要时再点“已保存 · 打开笔记”；重复点击不重复追加同一回答。
+### 3. 划线成为笔记，还能回到原文
 
-### 3. 让中文长文读起来舒服
+![4.2.4 划线与笔记并排：左侧原书粉色划线，右侧 Markdown 阅读笔记包含引文、回跳链接与批注](docs/assets/showcase-4.2.4-notes.jpg)
 
-![中文阅读设置：纸页主题、字号、中文字体、阅读方式和单双页布局](docs/assets/showcase-typography.jpg)
+每本书关联一篇 Markdown 阅读笔记。划线与批注自动汇总，引文右侧的 `↩` 链接用于返回书中对应位置。原文、自己的理解和来源留在一起，后续可以继续在 Obsidian 中整理与连接。
 
-默认提供离线朱雀仿宋；其他字体可选择本机已安装字体或导入 TTF、OTF、WOFF、WOFF2 文件。主题只改变书页，工具栏跟随 Obsidian；字号、行距、行长与单/双页布局可就近调整。PDF 设置只显示适用的页面与缩放选项，不展示无效的字体重排控件。
+### 4. 需要时，围绕选文和 AI 讨论
 
-### 4. 搜索不打断阅读，找完还能回去
+![4.2.4 AI 助读：书页与对话并排，问题保留选文来源，快捷问题位于输入框上方；图中回答为明确标注的界面演示](docs/assets/showcase-4.2.4-ai.jpg)
 
-![底部书内搜索：中文匹配高亮、章节结果和分页导航集中在阅读区下方](docs/assets/showcase-search.jpg)
+已打开 AI 助读时，新选文自动更新待提问上下文；选中本身不会发送请求。快捷问题保持可见，非中文选文增加翻译入口。每条已发送问题保留当时的来源，之后翻页或切换选文不会改写旧问题。
 
-目录、搜索和位置跳转集中在底栏。支持中文单字搜索、结果高亮、`Enter` 下一处、`Shift+Enter` 上一处、`Esc` 关闭。连续查看多个命中仍保留最初的返回点；也可把值得再看的位置保存为可命名标记。
+回答可以复制，或完整保存为独立 Markdown 笔记、追加到本书笔记；保存前可修改自动提取的标题。AI 是可选功能，配置服务后由你主动发送问题。图中固定示例仅展示交互，不代表模型效果或响应速度。
 
-### 5. PDF 保留原版式，图表仍然是图表
+### 5. PDF 保留原页面与图表
 
-![PDF 原页实拍：双栏文字、图表与页脚保持原布局，顶部提供独立缩放](docs/assets/showcase-pdf.jpg)
+![4.2.4 PDF 阅读：两页原创演示 PDF 并排呈现，保留双栏文字、图表和表格，顶部显示独立缩放控件](docs/assets/showcase-4.2.4-pdf.jpg)
 
-PDF 不再被拆成容易错位的普通段落，而是始终保留原始页面：图表、表格、字体和版式由 PDF.js 整页呈现。有可靠文字层的页面会在原页上叠加透明文本层，继续支持选择、复制、搜索、划线、批注和 AI 上下文；扫描页或文字层不可读的页面只提供原页阅读、进度、本书笔记和返回页码，不伪造文字能力。每本 PDF 只使用一份“本书笔记”，不再为每页重复创建笔记入口。一本混合型 PDF 会逐页判断能力。PDF 页面可在 50%–300% 之间缩放，放大后可拖动或滚动查看，原页、文字层和划线会保持对齐。
+PDF 保留原始版式，支持独立缩放。有可靠文字层时，可选择、复制、搜索、划线、批注和向 AI 提问；扫描页仍能阅读和保存进度，但不提供没有文字层支撑的搜索或文字问答。
 
-### 6. 一眼找到书，再接着读
-
-![书库实拍：原创 EPUB 封面与 PDF 首页面预览，支持搜索与阅读状态筛选](docs/assets/showcase-library.jpg)
-
-书库提供继续阅读、搜索、阅读状态和有划线筛选，并可直接打开划线与阅读笔记。一本书的阅读笔记负责汇总划线和批注；AI 回答可以另存或追加，不需要为 PDF 每页建立一篇笔记。
+目录、书内搜索和位置跳转集中在底栏。搜索支持结果高亮、`Enter` 下一处、`Shift+Enter` 上一处、`Esc` 关闭，并保留返回原阅读位置的入口。
 
 ## 离线示例书
 
@@ -242,7 +238,9 @@ Qiaomu Reader is a Chinese-first reader for Obsidian supporting EPUB, PDF, FB2, 
 
 ### A reading workflow, not just a chat window
 
-The screenshots above follow six everyday tasks: **read and ask side by side; save the complete answer; tune Chinese typography; search without losing your place; inspect original PDF pages; find a book and resume.** They were captured from real Obsidian 1.13.7 using original sample books and explicitly labeled, seeded demonstration replies. No private vault content is shown, and these are not model-quality or latency benchmarks.
+The five screenshots above show the published **4.2.4** release running in Obsidian 1.13.7: **the six-book starter library, selection actions, linked highlighting notes, optional AI assistance, and original PDF pages.** New users can start with Tao Te Ching, Three Hundred Tang Poems, Shishuo Xinyu, Alice in Wonderland, Jekyll and Hyde, or Meditations without finding a book or configuring AI first. The library includes covers, reading progress, highlight counts and note links.
+
+Captures use an isolated demo vault, bundled public-domain books and an original sample PDF. The AI conversation is a visibly labeled fixture with no model call; it demonstrates the interface, not model quality or latency. See [capture and release evidence](docs/showcase.md).
 
 - Streamed answers render as Markdown while arriving, including tables, task lists, blockquotes and code blocks through Obsidian's renderer.
 - Built-in quick prompts sit above the input, with translation for non-Chinese selections. An open AI panel follows new selections; selection alone does not send a request.
@@ -260,7 +258,7 @@ User-selected font files are read only on import and copied into the vault. Enum
 
 Reading works fully offline. In-reader settings are split into Reading and AI Assistance tabs, keeping frequent AI controls close to the book while API keys and endpoint URLs remain in Obsidian plugin settings. Optional AI reading assistance includes built-in quick prompts and supports signed-in Codex CLI, Claude Code CLI, Grok CLI, Kimi Code CLI, and ZCode CLI accounts without additional API-key setup, plus DeepSeek, Kimi, Qwen, GLM, MiniMax, SiliconFlow, Doubao, OpenRouter, OpenAI, Ollama, LM Studio, and custom OpenAI-compatible endpoints. CLI chats use persistent ACP sessions: Grok and Kimi provide ACP natively, while Codex, Claude, and ZCode use separately installed adapters. If an ACP session expires or its process exits before returning any content, the plugin rebuilds it and retries once; authentication, model, session, and process failures are reported separately. Grok ACP is launched with background auto-update disabled so an updater cannot delay the first streamed token. CLI providers are desktop-only and still send the page or selection you explicitly attach to their cloud service. AI is off by default and keys are stored with Obsidian SecretStorage.
 
-Saving an AI reply preserves its complete Markdown body with the source below it, either in a separate note or appended to the book's reading note. An editable title is extracted locally from the reply's topic, emphasis or content, with no extra model request. Saving keeps the chat open, and the saved action opens the existing note. Unsent drafts are persisted locally for up to 30 books (20,000 characters each) and survive sidebar closure/restarts; third-party syncing of the plugin folder may also copy them. Deleting conversations requires confirmation. Screenshots above are from the earlier 4.1.0 demonstration build; see the [official listing](https://community.obsidian.md/plugins/qiaomu-reader) for the current installable version and [GitHub Releases](https://github.com/joeseesun/qiaomu-reader/releases) for release notes.
+Saving an AI reply preserves its complete Markdown body with the source below it, either in a separate note or appended to the book's reading note. An editable title is extracted locally from the reply's topic, emphasis or content, with no extra model request. Saving keeps the chat open, and the saved action opens the existing note. Unsent drafts are persisted locally for up to 30 books (20,000 characters each) and survive sidebar closure/restarts; third-party syncing of the plugin folder may also copy them. Deleting conversations requires confirmation. Screenshots above were captured with the published [4.2.4 release](https://github.com/joeseesun/qiaomu-reader/releases/tag/4.2.4); see the [official listing](https://community.obsidian.md/plugins/qiaomu-reader) for installation.
 
 ### Verification and limits
 
