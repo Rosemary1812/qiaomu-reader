@@ -5511,6 +5511,30 @@ const AiChatHistoryModal = class extends Modal {
   }
   onClose() { this.contentEl.empty(); }
 };
+function renderMobileAiHeader(contentEl, chat) {
+  const head = contentEl.createDiv("qiaomu-reader-ai-head");
+  const headText = head.createDiv("qiaomu-reader-ai-headtext");
+  headText.createDiv({ cls: "qiaomu-reader-ai-title", text: qiaomuReaderTranslate("talking-about-the-passage") });
+  renderAiHeadMeta(headText, chat);
+  const actions = head.createDiv("qiaomu-reader-ai-head-actions");
+  const settings = actions.createEl("button", { cls: "qiaomu-reader-ai-prompt-settings" });
+  svgIcon(settings, "sliders");
+  settings.setAttribute("aria-label", qiaomuReaderTranslate("ai-reading-settings"));
+  settings.addEventListener("click", () => {
+    if (chat.readerView) new ReadSettingsModal(chat.app, chat.readerView, "ai").open();
+    else openPluginAiSettings(chat.app, chat.plugin);
+  });
+  const close = actions.createEl("button", { cls: "qiaomu-reader-ai-close" });
+  svgIcon(close, "x");
+  close.setAttribute("aria-label", qiaomuReaderTranslate("close"));
+  close.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    chat.close();
+  });
+  return { head, settings, close };
+}
+
 // Mobile uses the same attached-source composer as the desktop sidebar. The
 // source is context for the next turn, not a permanent banner above the chat.
 const AiExplainModal = class extends Modal {
@@ -5533,17 +5557,7 @@ const AiExplainModal = class extends Modal {
     const c = this.contentEl;
     c.empty();
     this.modalEl.addClass("qiaomu-reader-ai-modal");
-    const head = c.createDiv("qiaomu-reader-ai-head");
-    const headText = head.createDiv("qiaomu-reader-ai-headtext");
-    headText.createDiv({ cls: "qiaomu-reader-ai-title", text: qiaomuReaderTranslate("talking-about-the-passage") });
-    renderAiHeadMeta(headText, this);
-    const settings = head.createEl("button", { cls: "qiaomu-reader-ai-prompt-settings" });
-    svgIcon(settings, "sliders");
-    settings.setAttribute("aria-label", qiaomuReaderTranslate("ai-reading-settings"));
-    settings.addEventListener("click", () => {
-      if (this.readerView) new ReadSettingsModal(this.app, this.readerView, "ai").open();
-      else openPluginAiSettings(this.app, this.plugin);
-    });
+    renderMobileAiHeader(c, this);
     this.log = createAiChatLog(c, this);
     this._buildEmpty();
     renderAiComposerPrompts(c, this);

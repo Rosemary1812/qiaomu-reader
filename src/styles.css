@@ -895,6 +895,7 @@ img.qiaomu-reader-pdf-lazy:not([data-loaded="1"]) { background:color-mix(in srgb
 
 /* ── AI assistant: modal shell and header ────────────────────────────────── */
 .modal.qiaomu-reader-ai-modal { width: min(100%, 680px); max-width: 100%; min-width: 0; --modal-background: var(--background-primary); background: var(--background-primary); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.modal.qiaomu-reader-ai-modal > .modal-close-button { display:none; }
 .qiaomu-reader-ai-modal .modal-content { display: flex; flex-direction: column; gap: var(--size-4-2); min-height: 0; }
 .qiaomu-reader-ai-head { flex: 0 0 auto; display: flex; align-items: flex-start; gap: var(--size-4-2); }
 .qiaomu-reader-ai-headtext { flex: 1 1 auto; min-width: 0; }
@@ -1103,7 +1104,7 @@ img.qiaomu-reader-pdf-lazy:not([data-loaded="1"]) { background:color-mix(in srgb
 @media (pointer: coarse) { /* touch: full-height AI sheets */
   .modal.qiaomu-reader-ai-modal { width:100%; height:100dvh; max-height:100dvh; margin:0; border-radius:0; }
   .qiaomu-reader-ai-modal .modal-content { height:100%; max-height:none; overflow:hidden; padding:calc(var(--qiaomu-reader-pad) + var(--qiaomu-reader-safe-top)) var(--qiaomu-reader-pad) calc(var(--qiaomu-reader-pad) + var(--qiaomu-reader-safe-bottom)); }
-  .qiaomu-reader-ai-head { padding-right:36px; }
+  .qiaomu-reader-ai-modal .qiaomu-reader-ai-prompt-settings, .qiaomu-reader-ai-modal .qiaomu-reader-ai-close { width:44px; height:44px; }
   .qiaomu-reader-ai-log-wrap { margin-inline:calc(var(--qiaomu-reader-pad) * -.25); }
   .qiaomu-reader-ai-log { padding-inline:calc(var(--qiaomu-reader-pad) * .25); scroll-padding-bottom:12px; }
   .qiaomu-reader-ai-composer-mobile { margin-bottom:0; }
