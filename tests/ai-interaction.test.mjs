@@ -206,6 +206,30 @@ function chatHarness(explain, overrides = {}) {
   return { chat, window };
 }
 
+test("mobile AI header owns a safe close control that closes once", () => {
+  const window = dom();
+  const helper = source.slice(source.indexOf("function renderMobileAiHeader("), source.indexOf("// Mobile uses the same attached-source composer"));
+  const render = vm.runInNewContext(`${helper}\nrenderMobileAiHeader`, {
+    qiaomuReaderTranslate: (key) => key,
+    renderAiHeadMeta() {},
+    svgIcon(button, name) { button.dataset.icon = name; },
+    ReadSettingsModal: class {},
+    openPluginAiSettings() {},
+  });
+  const host = window.document.querySelector("main");
+  let closed = 0;
+  let bubbled = 0;
+  host.addEventListener("click", () => { bubbled += 1; });
+  const { close } = render(host, { app: {}, plugin: {}, readerView: null, close() { closed += 1; } });
+  assert.equal(host.querySelector(".qiaomu-reader-ai-head-actions")?.lastElementChild, close);
+  assert.equal(close.dataset.icon, "x");
+  assert.equal(close.getAttribute("aria-label"), "close");
+  close.click();
+  assert.equal(closed, 1);
+  assert.equal(bubbled, 0);
+  window.close();
+});
+
 for (const reason of ["cancelled", "timeout", "acpstopped"]) {
   test(`${reason} keeps partial Markdown, source, actions and history`, async () => {
     const { chat } = chatHarness(async (_text, _plugin, _turns, _book, { onDelta }) => {
