@@ -549,3 +549,48 @@ test("automatic selection sync only updates an existing AI sidebar and never ope
   assert.equal((source.match(/syncOpenAiSelectionContext\(this, range\)/g) || []).length, 2);
   assert.match(source, /syncOpenAiSelectionContext\(view, range\);/);
 });
+
+test("mobile modal renders a real answer without Component methods and unloads rendered children", async () => {
+  const children = new Set();
+  class Component {
+    load() {}
+    unload() { for (const child of this.children || []) child.unload(); children.delete(this); }
+    addChild(child) { (this.children ||= new Set()).add(child); children.add(child); return child; }
+    removeChild(child) { this.children.delete(child); child.unload(); }
+  }
+  const win = dom();
+  const rendererSource = source.slice(source.indexOf("function createAiStreamingMarkdownRenderer("), source.indexOf("function renderAiContextQuote("));
+  const render = vm.runInNewContext(`${rendererSource}\ncreateAiStreamingMarkdownRenderer`, {
+    window: win, Component, AI_MARKDOWN_RENDER_INTERVAL_MS: 50, console,
+    MarkdownRenderer: { async render(_app, text, el) { el.setText(text); } }, enhanceAiMarkdown() {},
+  });
+  const { chat, window } = chatHarness(async () => "这首诗写的是幽居自省。", { Component, createAiStreamingMarkdownRenderer: render });
+  // Modal is not a Component, unlike the desktop ItemView.
+  assert.equal(chat.addChild, undefined);
+  chat._markdownComponent = new Component();
+  chat._markdownComponent.load();
+  chat.contentEl = window.document.querySelector("main");
+  chat._actions = () => {};
+  assert.equal(await chat._send("解释一下"), true);
+  assert.match(chat.log.textContent, /幽居自省/);
+  assert.equal(chat.busy, false);
+  assert.equal(children.size, 1);
+  chat.onClose();
+  assert.equal(children.size, 0);
+  win.close(); window.close();
+});
+
+test("mobile AI requests leave the busy state after a stalled network call", async () => {
+  const helperSource = source.slice(source.indexOf("function aiRequestWithTimeout("), source.indexOf("async function aiExplainStream("));
+  const withTimeout = vm.runInNewContext(`${helperSource}\naiRequestWithTimeout`, {
+    window: { setTimeout, clearTimeout },
+  });
+  await assert.rejects(
+    withTimeout(new Promise(() => {}), null, 5),
+    (error) => error.qiaomuReaderReason === "timeout",
+  );
+  const controller = new AbortController();
+  const pending = withTimeout(new Promise(() => {}), controller.signal, 1000);
+  controller.abort();
+  await assert.rejects(pending, (error) => error.qiaomuReaderReason === "cancelled");
+});
