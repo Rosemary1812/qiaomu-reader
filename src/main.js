@@ -3953,6 +3953,34 @@ function aiHttpError(status, provider) {
   if (provider?.local) err.qiaomuReaderReason = "local";
   return err;
 }
+function aiRequestWithTimeout(promise, signal, timeoutMs = 45000) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      signal?.removeEventListener("abort", cancel);
+      callback(value);
+    };
+    const cancel = () => {
+      const err = new Error("AI request cancelled");
+      err.qiaomuReaderReason = "cancelled";
+      finish(reject, err);
+    };
+    const timer = window.setTimeout(() => {
+      const err = new Error("AI request timed out");
+      err.qiaomuReaderReason = "timeout";
+      finish(reject, err);
+    }, timeoutMs);
+    if (signal?.aborted) cancel();
+    else signal?.addEventListener("abort", cancel, { once: true });
+    Promise.resolve(promise).then(
+      (value) => finish(resolve, value),
+      (error) => finish(reject, error),
+    );
+  });
+}
 async function aiExplainStream(cfg, messages, options) {
   const body = buildAiRequestBody(cfg.id, cfg.model, messages, {
     ...options,
@@ -3960,44 +3988,69 @@ async function aiExplainStream(cfg, messages, options) {
     thinkingEnabled: cfg.thinking,
   });
   const req = buildAiRequestOptions(cfg.base, cfg.key, body);
-  const response = await window.fetch(req.url, {
-    method: req.method,
-    headers: req.headers,
-    body: req.body,
-    signal: options.signal,
-  });
-  if (!response.ok) throw aiHttpError(response.status, cfg.provider);
-  if (!response.body || typeof response.body.getReader !== "function") {
-    const err = new Error("stream unavailable");
-    err.qiaomuReaderStreamUnavailable = true;
-    throw err;
-  }
-  const reader = response.body.getReader();
+  const controller = new AbortController();
+  let timedOut = false;
+  let timeout = null;
+  const abortFromCaller = () => controller.abort();
+  const armTimeout = () => {
+    window.clearTimeout(timeout);
+    timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 45000);
+  };
+  if (options.signal?.aborted) abortFromCaller();
+  else options.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  armTimeout();
   const decoder = new TextDecoder("utf-8");
   let answer = "";
   let reasoning = "";
   let received = false;
   const parser = createOpenAiSseParser((delta) => {
     received = true;
+    armTimeout();
     reasoning += delta.reasoning;
     answer += delta.content;
     if (typeof options.onDelta === "function") {
       options.onDelta({ ...delta, answer, reasoningText: reasoning });
     }
   });
+  let reader = null;
   try {
+    const response = await window.fetch(req.url, {
+      method: req.method,
+      headers: req.headers,
+      body: req.body,
+      signal: controller.signal,
+    });
+    if (!response.ok) throw aiHttpError(response.status, cfg.provider);
+    if (!response.body || typeof response.body.getReader !== "function") {
+      const err = new Error("stream unavailable");
+      err.qiaomuReaderStreamUnavailable = true;
+      throw err;
+    }
+    reader = response.body.getReader();
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      armTimeout();
       parser.push(decoder.decode(value, { stream: true }));
     }
     parser.push(decoder.decode());
     parser.finish();
   } catch (e) {
+    if (timedOut) {
+      const err = new Error("AI request timed out");
+      err.qiaomuReaderReason = "timeout";
+      if (received) err.qiaomuReaderReceived = true;
+      throw err;
+    }
     if (received) e.qiaomuReaderReceived = true;
     throw e;
   } finally {
-    try { reader.releaseLock(); } catch { /* already released */ }
+    window.clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", abortFromCaller);
+    try { reader?.releaseLock(); } catch { /* already released */ }
   }
   if (!answer.trim()) {
     const err = new Error(reasoning ? "reasoning without answer" : "empty");
@@ -4057,7 +4110,10 @@ async function aiExplain(text, plugin, turns, book, options = {}) {
     ...options,
     thinkingEnabled: cfg.thinking,
   });
-  const res = await requestUrl(buildAiRequestOptions(cfg.base, cfg.key, body));
+  const res = await aiRequestWithTimeout(
+    requestUrl(buildAiRequestOptions(cfg.base, cfg.key, body)),
+    options.signal,
+  );
   if (options.signal && options.signal.aborted) {
     const err = new Error("AI request cancelled");
     err.qiaomuReaderReason = "cancelled";
@@ -5048,6 +5104,7 @@ function createAiChatLog(host, chat) {
 }
 
 function createAiStreamingMarkdownRenderer(owner, element, sourcePath = "", options = {}) {
+  const lifecycle = owner._markdownComponent || owner;
   element.addClass("qiaomu-reader-ai-markdown");
   let source = "";
   let requestedVersion = 0;
@@ -5060,7 +5117,7 @@ function createAiStreamingMarkdownRenderer(owner, element, sourcePath = "", opti
 
   const removeRenderComponent = () => {
     if (!renderComponent) return;
-    try { owner.removeChild(renderComponent); }
+    try { lifecycle.removeChild(renderComponent); }
     catch { try { renderComponent.unload(); } catch { /* already unloaded */ } }
     renderComponent = null;
   };
@@ -5080,7 +5137,7 @@ function createAiStreamingMarkdownRenderer(owner, element, sourcePath = "", opti
     running = (async () => {
       removeRenderComponent();
       const component = new Component();
-      owner.addChild(component);
+      lifecycle.addChild(component);
       renderComponent = component;
       element.removeClass("qiaomu-reader-ai-markdown-fallback");
       element.empty();
@@ -5460,6 +5517,8 @@ const AiExplainModal = class extends Modal {
   constructor(app, plugin, context) {
     super(app);
     this.plugin = plugin;
+    // Modal does not inherit Component; own Markdown children explicitly.
+    this._markdownComponent = new Component();
     this.pendingContext = normalizeAiTurnContext(context);
     this.structuredContext = true;
     this.text = this.pendingContext?.text || "";
@@ -5470,6 +5529,7 @@ const AiExplainModal = class extends Modal {
     this.aiSessionKey = newAiSessionKey();
   }
   async onOpen() {
+    this._markdownComponent.load();
     const c = this.contentEl;
     c.empty();
     this.modalEl.addClass("qiaomu-reader-ai-modal");
@@ -5664,7 +5724,7 @@ const AiExplainModal = class extends Modal {
     if (this.empty) { this.empty.remove(); this.empty = null; }
     const attachedContext = normalizeAiTurnContext(this.pendingContext);
     const userTurn = { role: "user", content: text, ...(attachedContext ? { context: attachedContext } : {}) };
-    renderAiUserTurn(this.log, userTurn);
+    const userBubble = renderAiUserTurn(this.log, userTurn);
     this.turns.push(userTurn);
     const group = this.log.createDiv("qiaomu-reader-ai-group");
     const reasoningBox = group.createEl("details", { cls: "qiaomu-reader-ai-reason" });
@@ -5778,6 +5838,22 @@ const AiExplainModal = class extends Modal {
                   : why === "emptyanswer" ? qiaomuReaderTranslate("the-model-returned-reasoning-but-no-final-answer-try-again")
                   : why === "http" ? qiaomuReaderTranslate("the-service-answered-with-error-0", e.qiaomuReaderStatus)
                     : qiaomuReaderTranslate("could-not-reach-the-service-it-looks-like-there-is-no-internet-c"));
+      if (why !== "cancelled") {
+        const retryRow = group.createDiv("qiaomu-reader-ai-acts qiaomu-reader-ai-error-actions");
+        const retry = retryRow.createEl("button", { cls: "qiaomu-reader-ai-act" });
+        svgIcon(retry, "rotate-ccw");
+        retry.createSpan({ text: qiaomuReaderTranslate("try-again") });
+        retry.addEventListener("click", () => {
+          if (this.busy) return;
+          retry.disabled = true;
+          userBubble.remove();
+          group.remove();
+          this.pendingContext = normalizeAiTurnContext(attachedContext);
+          if (this.pendingContext) this.text = this.pendingContext.text;
+          this._regeneratingContext = true;
+          void this._send(text);
+        });
+      }
       if (followTail && !this._readingEarlier) this._scroll();
       this.busy = false;
       this.abortController = null;
@@ -5812,6 +5888,7 @@ const AiExplainModal = class extends Modal {
     void this.plugin.aiDraftStore?.flush();
     this.activeMarkdownRenderer?.dispose();
     this.activeMarkdownRenderer = null;
+    this._markdownComponent.unload();
     if (this._kbShow) {
       window.removeEventListener("keyboardWillShow", this._kbShow);
       window.removeEventListener("keyboardDidShow", this._kbShow);
