@@ -150,6 +150,44 @@ export function calibreLibraryName(libraryPath, pathApi) {
   return base.replace(/ /g, "_") || "_";
 }
 
+export function isInsideDir(root, target, pathApi) {
+  if (!root || !target || !pathApi) return false;
+  const sep = pathApi.sep || "/";
+  const resolvedRoot = pathApi.resolve(String(root));
+  const resolvedTarget = pathApi.resolve(String(target));
+  const prefix = resolvedRoot.endsWith(sep) ? resolvedRoot : resolvedRoot + sep;
+  return resolvedTarget === resolvedRoot || resolvedTarget.startsWith(prefix);
+}
+
+export function copyToArrayBuffer(data) {
+  const src = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const out = new Uint8Array(src.byteLength);
+  out.set(src);
+  return out.buffer;
+}
+
+export function calibreSafeFilename(title, format) {
+  let stem = String(title || "book").normalize("NFC");
+  stem = [...stem].filter((ch) => {
+    const code = ch.charCodeAt(0);
+    return code >= 32 && code !== 127;
+  }).join("");
+  stem = stem.replace(/[\\/:*?"<>|]/g, "_");
+  stem = stem.replace(/[：＊？＂＜＞｜]/g, "_");
+  stem = stem.replace(/^\.+/g, "").replace(/[. ]+$/g, "").trim() || "book";
+  if (stem.length > 120) stem = stem.slice(0, 120).trim() || "book";
+  const ext = String(format || "epub").toLowerCase().replace(/[^a-z0-9]/g, "") || "epub";
+  return `${stem}.${ext}`;
+}
+
+export function readLibraryFile(libraryPath, filePath) {
+  const rt = calibreRuntime();
+  if (!rt) throw new Error("desktop-only");
+  if (!isInsideDir(libraryPath, filePath, rt.path)) throw new Error("path-outside-library");
+  const data = rt.fs.readFileSync(filePath);
+  return { bytes: copyToArrayBuffer(data), size: data.length };
+}
+
 export function detectCalibreLibraryPath(configured = "") {
   const rt = calibreRuntime();
   if (!rt) return "";
@@ -182,6 +220,11 @@ export function detectCalibredbPath(configured = "") {
     "/usr/local/bin/calibredb",
     path.join(os.homedir(), "calibre.app", "Contents", "MacOS", "calibredb"),
   ];
+  if (typeof window !== "undefined" && window.process?.platform === "win32") {
+    const pf = window.process.env?.ProgramFiles || "C:\\Program Files";
+    const pf86 = window.process.env?.["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+    extra.push(path.join(pf, "Calibre2", "calibredb.exe"), path.join(pf86, "Calibre2", "calibredb.exe"));
+  }
   const envPath = (typeof window !== "undefined" && window.process && window.process.env && window.process.env.PATH) || "";
   const dirs = envPath.split(path.delimiter || ":").filter(Boolean);
   const names = window.process?.platform === "win32" ? ["calibredb.exe", "calibredb"] : ["calibredb"];
@@ -202,8 +245,8 @@ async function queryMetadataDb(libraryPath, mode, payload) {
   const rt = calibreRuntime();
   if (!rt) throw new Error("desktop-only");
   const { childProcess, fs, os, path } = rt;
-  const src = path.join(libraryPath, "metadata.db");
-  if (!fs.existsSync(src)) throw new Error("metadata.db missing");
+  const src = path.join(path.resolve(libraryPath), "metadata.db");
+  if (!isInsideDir(libraryPath, src, path) || !fs.existsSync(src)) throw new Error("metadata.db missing");
   const tmp = path.join(os.tmpdir(), `qiaomu-calibre-${Date.now()}-${Math.random().toString(16).slice(2)}.db`);
   fs.copyFileSync(src, tmp);
   const args = ["-c", SEARCH_PY, tmp, mode, JSON.stringify(payload || {})];
@@ -249,16 +292,18 @@ export function resolveCalibreBookFile(libraryPath, book, format) {
   if (!rt || !book || !format) return "";
   const { fs, path } = rt;
   const dir = path.join(libraryPath, book.path || "");
+  if (!isInsideDir(libraryPath, dir, path)) return "";
   const want = String(format).toLowerCase();
   const stem = (book.stems && (book.stems[format.toUpperCase()] || book.stems[want.toUpperCase()])) || "";
+  const pick = (abs) => (abs && isInsideDir(libraryPath, abs, path) && fs.existsSync(abs) ? abs : "");
   if (stem) {
-    const exact = path.join(dir, `${stem}.${want}`);
-    if (fs.existsSync(exact)) return exact;
+    const exact = pick(path.join(dir, `${stem}.${want}`));
+    if (exact) return exact;
   }
   if (!fs.existsSync(dir)) return "";
   try {
     const hit = fs.readdirSync(dir).find((name) => name.toLowerCase().endsWith(`.${want}`));
-    return hit ? path.join(dir, hit) : "";
+    return hit ? pick(path.join(dir, hit)) : "";
   } catch {
     return "";
   }
@@ -268,6 +313,7 @@ export function calibreCoverPath(libraryPath, book) {
   const rt = calibreRuntime();
   if (!rt || !book || !book.path) return "";
   const file = rt.path.join(libraryPath, book.path, "cover.jpg");
+  if (!isInsideDir(libraryPath, file, rt.path)) return "";
   return rt.fs.existsSync(file) ? file : "";
 }
 
@@ -279,23 +325,90 @@ export function readCoverDataUrl(coverPath) {
   return base64 ? `data:image/jpeg;base64,${base64}` : "";
 }
 
+function booksFromCalibredbRows(rows, libraryPath, pathApi) {
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const formatPaths = Array.isArray(row.formats) ? row.formats : [];
+    const formats = [];
+    const stems = {};
+    let relPath = "";
+    for (const abs of formatPaths) {
+      if (!abs || !isInsideDir(libraryPath, abs, pathApi)) continue;
+      const ext = pathApi.extname(abs).slice(1).toUpperCase();
+      if (!ext) continue;
+      formats.push(ext);
+      stems[ext] = pathApi.basename(abs, pathApi.extname(abs));
+      relPath = pathApi.relative(libraryPath, pathApi.dirname(abs));
+    }
+    const identifiers = row.identifiers && typeof row.identifiers === "object" ? row.identifiers : {};
+    const isbn = row.isbn || identifiers.isbn || identifiers.ISBN || "";
+    const size = Number(row.size) || 0;
+    const sizes = {};
+    if (formats[0] && size) sizes[formats[0]] = size;
+    return {
+      id: row.id,
+      uuid: row.uuid || "",
+      title: row.title || "",
+      authors: String(row.authors || "").replace(/,/g, " & "),
+      path: relPath,
+      hasCover: true,
+      lastModified: row.last_modified || "",
+      formats,
+      sizes,
+      stems,
+      isbn: String(isbn),
+      posFrac: null,
+      lastRead: null,
+    };
+  });
+}
+
+async function searchViaCalibredb(libraryPath, calibredbPath, query, limit) {
+  const rt = calibreRuntime();
+  if (!rt) throw new Error("desktop-only");
+  if (!calibredbPath) throw new Error("calibredb-missing");
+  const { childProcess, path } = rt;
+  const args = [
+    "list",
+    "--library-path", libraryPath,
+    "--for-machine",
+    "-f", "title,authors,formats,uuid,id,identifiers,isbn,size",
+    "--limit", String(limit),
+  ];
+  if (query) args.push("-s", query);
+  else args.push("--sort-by", "last_modified");
+  const { stdout } = await execFileUtf8(childProcess, calibredbPath, args, { timeout: 25000 });
+  const rows = JSON.parse(String(stdout || "[]").trim() || "[]");
+  return {
+    books: booksFromCalibredbRows(rows, libraryPath, path),
+    mode: query ? "calibredb" : "recent",
+  };
+}
+
 export async function searchCalibreLibrary({ libraryPath, calibredbPath, query, limit = 30, syntax = false }) {
   const q = String(query || "").trim();
   const useSyntax = syntax || isCalibreSyntaxQuery(q);
-  if (!q && !useSyntax) {
-    return { books: await queryMetadataDb(libraryPath, "recent", { limit }), mode: "recent" };
+  try {
+    if (!q && !useSyntax) {
+      return { books: await queryMetadataDb(libraryPath, "recent", { limit }), mode: "recent" };
+    }
+    if (useSyntax) {
+      const ids = await searchCalibredbIds(libraryPath, calibredbPath, q, limit);
+      if (!ids.length) return { books: [], mode: "calibredb" };
+      const books = await queryMetadataDb(libraryPath, "ids", { ids });
+      const order = new Map(ids.map((id, i) => [Number(id), i]));
+      books.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+      return { books, mode: "calibredb" };
+    }
+    const parsed = parseSimpleCalibreQuery(q);
+    const books = await queryMetadataDb(libraryPath, "search", { ...parsed, limit });
+    return { books, mode: "sqlite" };
+  } catch (error) {
+    if (!calibredbPath) throw error;
+    const searchQuery = useSyntax || q ? (useSyntax ? q : (parseSimpleCalibreQuery(q).field
+      ? `${parseSimpleCalibreQuery(q).field}:${parseSimpleCalibreQuery(q).q}`
+      : q)) : "";
+    return searchViaCalibredb(libraryPath, calibredbPath, searchQuery, limit);
   }
-  if (useSyntax) {
-    const ids = await searchCalibredbIds(libraryPath, calibredbPath, q, limit);
-    if (!ids.length) return { books: [], mode: "calibredb" };
-    const books = await queryMetadataDb(libraryPath, "ids", { ids });
-    const order = new Map(ids.map((id, i) => [Number(id), i]));
-    books.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
-    return { books, mode: "calibredb" };
-  }
-  const parsed = parseSimpleCalibreQuery(q);
-  const books = await queryMetadataDb(libraryPath, "search", { ...parsed, limit });
-  return { books, mode: "sqlite" };
 }
 
 export function openCalibreShowBook(libraryPath, bookId) {

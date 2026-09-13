@@ -15,6 +15,7 @@ import {
   pickPreferredFormat,
   readCoverDataUrl,
   calibreCoverPath,
+  calibreSafeFilename,
   resolveCalibreBookFile,
   searchCalibreLibrary,
 } from "./calibre-library.js";
@@ -47,10 +48,6 @@ export class CalibreSearchModal extends Modal {
   onOpen() {
     this.containerEl.addClass("qiaomu-reader-calibre-modal-container");
     this.modalEl.addClass("qiaomu-reader-calibre-modal");
-    this.modalEl.style.setProperty("width", "min(560px, 92vw)");
-    this.modalEl.style.setProperty("height", "min(680px, 85vh)");
-    this.modalEl.style.setProperty("max-height", "min(680px, 85vh)");
-    this.modalEl.style.setProperty("min-height", "min(680px, 85vh)");
     if (!Platform.isDesktopApp) {
       this._error = tx(this.plugin, "calibre-desktop-only");
     }
@@ -357,8 +354,4 @@ export class CalibreSearchModal extends Modal {
   }
 }
 
-export function calibreSafeFilename(title, format) {
-  const stem = String(title || "book").replace(/[\\/:*?"<>|\n\r\t]/g, "_").trim() || "book";
-  const ext = String(format || "epub").toLowerCase();
-  return `${stem}.${ext}`;
-}
+export { calibreSafeFilename };

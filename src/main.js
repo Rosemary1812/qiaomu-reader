@@ -58,6 +58,7 @@ import {
   forgetCalibreImportByPath,
   openCalibreShowBook,
   readCoverDataUrl,
+  readLibraryFile,
 } from "./calibre-library.js";
 
 // Interface language is local to this plugin; dictionaries are bundled offline.
@@ -2251,10 +2252,21 @@ const QiaomuBookReader = class extends Plugin {
       if (state.kind === "imported") { skipped += 1; continue; }
       let vaultPath = state.path;
       if (state.kind === "new") {
-        const data = rt.fs.readFileSync(job.filePath);
-        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-        vaultPath = this.freeBookPath(dir, calibreSafeFilename(book.title, format));
-        await this.app.vault.createBinary(vaultPath, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+        try {
+          const { bytes, size } = readLibraryFile(job.libraryPath, job.filePath);
+          vaultPath = this.freeBookPath(dir, calibreSafeFilename(book.title, format));
+          await this.app.vault.createBinary(vaultPath, bytes);
+          const written = await this.app.vault.adapter.readBinary(vaultPath);
+          if (!written || written.byteLength !== size) {
+            const broken = this.app.vault.getAbstractFileByPath(vaultPath);
+            if (broken) await this.app.vault.delete(broken);
+            throw new Error("calibre-write-mismatch");
+          }
+        } catch (error) {
+          console.warn("Qiaomu Reader: Calibre copy failed", error);
+          skipped += 1;
+          continue;
+        }
         added += 1;
         const coverUrl = readCoverDataUrl(calibreCoverPath(job.libraryPath, book));
         if (coverUrl) this.thumbCache[vaultPath] = coverUrl;
@@ -13440,7 +13452,7 @@ const SettingsTab = class extends PluginSettingTab {
         .setName(tx("calibre-library-path"))
         .setDesc(found ? tx("calibre-library-using", found) : tx("calibre-library-missing"))
         .addText((text) => {
-          text.setPlaceholder("/Users/me/calibre");
+          text.setPlaceholder("~/calibre");
           text.setValue(settings.calibreLibraryPath || found || "");
           text.onChange((v) => persistViaDisk("calibreLibraryPath", v));
         })
