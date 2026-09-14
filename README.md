@@ -148,7 +148,7 @@ AI 默认关闭。启用后，文本型 PDF 会把整份可提取文字作为新
 - 聚合服务：硅基流动、豆包/火山方舟、OpenRouter。
 - 国际服务：OpenAI。
 - 本地模型：Ollama、LM Studio。
-- 高级配置：任意 OpenAI 兼容接口。
+- 高级配置：任意 OpenAI 兼容接口，可直接新建或选择 Obsidian 密钥；密钥、模型和接口地址按服务分别保存。
 
 API 密钥保存在 Obsidian 的密钥库中，不会写入插件 `data.json`。设置页可发送一条不含书籍内容的最短消息测试连接。
 
@@ -264,7 +264,7 @@ BRAT and manual installation remain available as [alternative installation metho
 
 User-selected font files are read only on import and copied into the vault. Enumerating system fonts happens only after pressing the font picker button. Desktop CLI mode detects user-installed executables and runs them in an isolated temporary directory outside the vault; CLI configuration and login are managed by the installed tool.
 
-Reading works fully offline. In-reader settings are split into Reading and AI Assistance tabs, keeping frequent AI controls close to the book while API keys and endpoint URLs remain in Obsidian plugin settings. Optional AI reading assistance includes built-in quick prompts and supports signed-in Codex CLI, Claude Code CLI, Grok CLI, Kimi Code CLI, and ZCode CLI accounts without additional API-key setup, plus DeepSeek, Kimi, Qwen, GLM, MiniMax, SiliconFlow, Doubao, OpenRouter, OpenAI, Ollama, LM Studio, and custom OpenAI-compatible endpoints. CLI chats use persistent ACP sessions: Grok and Kimi provide ACP natively, while Codex, Claude, and ZCode use separately installed adapters. If an ACP session expires or its process exits before returning any content, the plugin rebuilds it and retries once; authentication, model, session, and process failures are reported separately. Grok ACP is launched with background auto-update disabled so an updater cannot delay the first streamed token. CLI providers are desktop-only and still send the page or selection you explicitly attach to their cloud service. AI is off by default and keys are stored with Obsidian SecretStorage.
+Reading works fully offline. In-reader settings are split into Reading and AI Assistance tabs, keeping frequent AI controls close to the book while API keys and endpoint URLs remain in Obsidian plugin settings. Optional AI reading assistance includes built-in quick prompts and supports signed-in Codex CLI, Claude Code CLI, Grok CLI, Kimi Code CLI, and ZCode CLI accounts without additional API-key setup, plus DeepSeek, Kimi, Qwen, GLM, MiniMax, SiliconFlow, Doubao, OpenRouter, OpenAI, Ollama, LM Studio, and custom OpenAI-compatible endpoints. Custom endpoints can create or select an Obsidian secret directly, and each provider keeps its own secret, model, and endpoint override. CLI chats use persistent ACP sessions: Grok and Kimi provide ACP natively, while Codex, Claude, and ZCode use separately installed adapters. If an ACP session expires or its process exits before returning any content, the plugin rebuilds it and retries once; authentication, model, session, and process failures are reported separately. Grok ACP is launched with background auto-update disabled so an updater cannot delay the first streamed token. CLI providers are desktop-only and still send the page or selection you explicitly attach to their cloud service. AI is off by default and keys are stored with Obsidian SecretStorage.
 
 **New in 4.2.7:** The AI companion appears on the first book open on wide desktop windows and remembers when you close it. Configure a service directly in the sidebar. Save translations with their original passage and location link to the book note, an open note, a new note or today’s Daily Note.
 

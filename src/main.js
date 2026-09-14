@@ -114,7 +114,11 @@ const DEFAULT_AI = {
   aiEnabled: false, aiNeedsVerification: false, aiProvider: "",
   // The API key itself lives in Obsidian SecretStorage. data.json keeps only
   // the selected secret ID so vault syncing never copies the key.
-  aiSecret: "", aiKey: "", aiModel: "",
+  // aiSecret and aiBase remain only as migration bridges for versions before
+  // 4.2.13. Active credentials and endpoint overrides are provider-scoped so
+  // switching services cannot reuse or erase another service's configuration.
+  aiSecret: "", aiKey: "", aiModel: "", aiBase: "",
+  aiSecrets: {}, aiBases: {},
   // Model and reasoning choices belong to the provider, not to the global AI
   // switch. A reader can move between Codex and Claude without losing either
   // selection. aiModel remains as a migration bridge for pre-3.7 installs.
@@ -122,7 +126,7 @@ const DEFAULT_AI = {
   // Provider-specific reasoning switches. An absent DeepSeek entry keeps the
   // service default (thinking enabled), while an explicit false survives
   // switching to another provider and back.
-  aiThinking: {}, aiCliEfforts: {}, aiBase: "",
+  aiThinking: {}, aiCliEfforts: {},
   // Optional per-provider executable overrides. Empty means auto-detect from
   // GUI PATH plus common macOS/Linux/Windows install locations.
   aiCliPaths: {},
@@ -1867,6 +1871,8 @@ const QiaomuBookReader = class extends Plugin {
     this.settings.aiCliPaths = { ...(this.settings.aiCliPaths || {}) };
     this.settings.aiAcpPaths = { ...(this.settings.aiAcpPaths || {}) };
     this.settings.aiModels = { ...(this.settings.aiModels || {}) };
+    this.settings.aiSecrets = { ...(this.settings.aiSecrets || {}) };
+    this.settings.aiBases = { ...(this.settings.aiBases || {}) };
     this.settings.aiThinking = { ...(this.settings.aiThinking || {}) };
     this.settings.aiCliEfforts = { ...(this.settings.aiCliEfforts || {}) };
     this.settings.aiChatHistory = normalizeAiChatHistory(this.settings.aiChatHistory);
@@ -1885,38 +1891,38 @@ const QiaomuBookReader = class extends Plugin {
     if (this.settings.quoteTemplate) {
       this.settings.quoteTemplate = this.settings.quoteTemplate.replace(/—\s+из\s+(?=\[\[\{book\}\]\])/giu, "— ");
     }
-    let v33SettingsMigrated = false;
+    let settingsMigrated = false;
     if (this.settings.aiProvider === "grok-cli"
       && !Object.prototype.hasOwnProperty.call(this.settings.aiCliEfforts, "grok-cli")) {
       this.settings.aiCliEfforts["grok-cli"] = "low";
-      v33SettingsMigrated = true;
+      settingsMigrated = true;
     }
     // v3.3 replaces the old colour names with purpose-built reading themes.
     // Migrate both the shared appearance and any per-device profiles once.
     const migratedTheme = migrateReaderTheme(this.settings.theme);
-    if (migratedTheme !== this.settings.theme) v33SettingsMigrated = true;
+    if (migratedTheme !== this.settings.theme) settingsMigrated = true;
     this.settings.theme = migratedTheme;
     if (!["auto", "reader"].includes(this.settings.libTheme)) {
       const migratedLibraryTheme = migrateReaderTheme(this.settings.libTheme);
-      if (migratedLibraryTheme !== this.settings.libTheme) v33SettingsMigrated = true;
+      if (migratedLibraryTheme !== this.settings.libTheme) settingsMigrated = true;
       this.settings.libTheme = migratedLibraryTheme;
     }
     for (const profile of Object.values(this.settings.deviceProfiles || {})) {
       if (profile && profile.theme) {
         const migratedProfileTheme = migrateReaderTheme(profile.theme);
-        if (migratedProfileTheme !== profile.theme) v33SettingsMigrated = true;
+        if (migratedProfileTheme !== profile.theme) settingsMigrated = true;
         profile.theme = migratedProfileTheme;
       }
     }
     if (this.settings.aiProvider === "local") {
       this.settings.aiProvider = "ollama";
-      v33SettingsMigrated = true;
+      settingsMigrated = true;
     }
     // Unknown providers must not send a saved key to a different service.
     if (this.settings.aiProvider && !aiProviderFor(this.settings.aiProvider)) {
       this.settings.aiProvider = "";
       this.settings.aiEnabled = false;
-      v33SettingsMigrated = true;
+      settingsMigrated = true;
     }
     // Move legacy plaintext keys out of data.json on modern Obsidian.
     // The retired service key is preserved as a secret but not selected.
@@ -1927,9 +1933,27 @@ const QiaomuBookReader = class extends Plugin {
       this.app.secretStorage.setSecret(secretId, this.settings.aiKey);
       if (this.settings.aiProvider) this.settings.aiSecret = secretId;
       this.settings.aiKey = "";
-      v33SettingsMigrated = true;
+      settingsMigrated = true;
     }
-    if (v33SettingsMigrated) await this._saveLocalData();
+    // Versions before 4.2.13 kept one selected secret and endpoint override
+    // globally. Associate those values only with the provider that owned them,
+    // then remove the global references so they cannot leak across providers.
+    const legacyAiProvider = this.settings.aiProvider;
+    if (this.settings.aiSecret) {
+      if (legacyAiProvider && !this.settings.aiSecrets[legacyAiProvider]) {
+        this.settings.aiSecrets[legacyAiProvider] = this.settings.aiSecret;
+      }
+      this.settings.aiSecret = "";
+      settingsMigrated = true;
+    }
+    if (this.settings.aiBase) {
+      if (legacyAiProvider && !this.settings.aiBases[legacyAiProvider]) {
+        this.settings.aiBases[legacyAiProvider] = normalizeAiBase(this.settings.aiBase);
+      }
+      this.settings.aiBase = "";
+      settingsMigrated = true;
+    }
+    if (settingsMigrated) await this._saveLocalData();
   }
   _applyLanguageDefaults() {
     // Qiaomu Reader is Chinese-first. Existing explicit language choices
@@ -3101,10 +3125,12 @@ async function translateText(text, to = "ru") {
   }
   return translated.trim();
 }
-function aiSecretValue(plugin) {
+function aiSecretValue(plugin, providerId) {
   const settings = plugin.settings;
-  if (settings.aiSecret && plugin.app.secretStorage) {
-    return plugin.app.secretStorage.getSecret(settings.aiSecret) || "";
+  const secretId = settings.aiSecrets?.[providerId]
+    || (providerId === settings.aiProvider ? settings.aiSecret : "");
+  if (secretId && plugin.app.secretStorage) {
+    return plugin.app.secretStorage.getSecret(secretId) || "";
   }
   // Temporary compatibility path for Obsidian before SecretStorage and for the
   // one load in which a legacy plaintext key is being migrated.
@@ -3119,12 +3145,14 @@ function aiConfig(plugin) {
     id,
     provider: p,
     transport: p.transport || "http",
-    base: normalizeAiBase(settings.aiBase || p.base),
+    base: normalizeAiBase(settings.aiBases?.[id]
+      || (id === settings.aiProvider ? settings.aiBase : "")
+      || p.base),
     model: String(settings.aiModels && settings.aiModels[id] || settings.aiModel || p.model || "").trim(),
     thinking: !p.supportsThinking || !settings.aiThinking
       || settings.aiThinking[id] !== false,
     effort: effectiveCliEffort(id, settings.aiCliEfforts && settings.aiCliEfforts[id]),
-    key: aiSecretValue(plugin),
+    key: aiSecretValue(plugin, id),
     needsKey: p.needsKey,
     cliPath: String(settings.aiCliPaths && settings.aiCliPaths[id] || "").trim(),
     acpPath: String(settings.aiAcpPaths && settings.aiAcpPaths[id] || "").trim(),
@@ -7758,7 +7786,7 @@ const ReadSettingsModal = class extends Modal {
       });
       start.addEventListener("click", () => openPluginAiSettings(this.app, plugin, () => this._draw()));
     } else {
-      const providerName = cfg.provider.label;
+      const providerName = qiaomuReaderTranslate(cfg.provider.label);
       const modelName = cfg.model || (cfg.transport === "cli" ? qiaomuReaderTranslate("model-default") : qiaomuReaderTranslate("default-model"));
       const status = new Setting(section)
         .setName(qiaomuReaderTranslate("ai-assistance-is-set-up"))
@@ -12468,7 +12496,7 @@ const SettingsTab = class extends PluginSettingTab {
     const p = cfg.provider;
     this._aiModelPicker(c, s, p, redraw);
     const needsSecret = p.transport !== "cli" && p.needsKey && !cfg.key;
-    if (needsSecret) this._aiSecretRow(c, s, p);
+    if (needsSecret || cfg.id === "custom") this._aiSecretRow(c, s, p);
     if (cfg.id === "custom") this._aiBaseRow(c, s, p);
     const feedback = c.createDiv("qiaomu-reader-ai-setup-feedback");
     feedback.setAttribute("role", "status");
@@ -12556,7 +12584,6 @@ const SettingsTab = class extends PluginSettingTab {
       dropdown.setValue(s.aiProvider || "").onChange(async choice => {
         s.aiProvider = choice;
         s.aiModel = s.aiModels && s.aiModels[choice] || "";
-        s.aiBase = "";
         s.aiEnabled = false;
         s.aiNeedsVerification = Boolean(choice);
         await this._saveAll();
@@ -12796,14 +12823,17 @@ const SettingsTab = class extends PluginSettingTab {
     acpSetting.addButton((b) => b.setButtonText(qiaomuReaderTranslate("view-install-docs")).onClick(() => window.open(acp.installUrl, "_blank")));
   }
   _aiSecretRow(host, s, p) {
+    if (!s.aiSecrets || typeof s.aiSecrets !== "object") s.aiSecrets = {};
+    const secretId = s.aiSecrets[s.aiProvider] || "";
     const keySetting = new Setting(host)
-      .setName(qiaomuReaderTranslate("api-key"))
+      .setName(qiaomuReaderTranslate(s.aiProvider === "custom" ? "api-key-optional" : "api-key"))
       .setDesc(qiaomuReaderTranslate("the-key-is-stored-in-obsidian-secretstorage-and-is-not-written-t"));
     if (typeof SecretComponent === "function" && this.app.secretStorage) {
       keySetting.addComponent((el) => new SecretComponent(this.app, el)
-        .setValue(s.aiSecret || "")
+        .setValue(secretId)
         .onChange(async (value) => {
-          s.aiSecret = value;
+          s.aiSecrets = { ...s.aiSecrets, [s.aiProvider]: value || "" };
+          s.aiSecret = "";
           s.aiKey = "";
           s.aiEnabled = false;
           s.aiNeedsVerification = true;
@@ -12847,11 +12877,13 @@ const SettingsTab = class extends PluginSettingTab {
       });
   }
   _aiBaseRow(host, s, p) {
+    if (!s.aiBases || typeof s.aiBases !== "object") s.aiBases = {};
     new Setting(host)
       .setName(qiaomuReaderTranslate("base-url"))
       .setDesc(qiaomuReaderTranslate("usually-leave-this-empty-change-it-only-for-regional-endpoints-p"))
-      .addText((field) => field.setPlaceholder(p.base || "https://…/v1").setValue(s.aiBase || "").onChange(async (value) => {
-        s.aiBase = normalizeAiBase(value);
+      .addText((field) => field.setPlaceholder(p.base || "https://…/v1").setValue(s.aiBases[s.aiProvider] || "").onChange(async (value) => {
+        s.aiBases = { ...s.aiBases, [s.aiProvider]: normalizeAiBase(value) };
+        s.aiBase = "";
         s.aiEnabled = false;
         s.aiNeedsVerification = true;
         await this._saveAll();
@@ -13140,7 +13172,7 @@ const SettingsTab = class extends PluginSettingTab {
     const modelName = cfg.model || (cfg.transport === "cli" ? qiaomuReaderTranslate("model-default") : qiaomuReaderTranslate("default-model"));
     setup
       .setName(qiaomuReaderTranslate("ai-assistance-is-set-up"))
-      .setDesc(`${cfg.provider.label} · ${modelName}`)
+      .setDesc(`${qiaomuReaderTranslate(cfg.provider.label)} · ${modelName}`)
       .addButton((btn) => btn
         .setButtonText(qiaomuReaderTranslate("change-service"))
         .onClick(() => openPluginAiSettings(this.app, this.plugin, () => this._redraw())));

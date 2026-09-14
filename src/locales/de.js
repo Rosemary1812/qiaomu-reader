@@ -979,6 +979,7 @@ export default {
   "choose-a-service": "Dienst auswählen",
   "choose-a-service-to-configure-its-model-and-key-ai-is-off-by-def": "Wählen Sie einen Dienst, um sein Modell und seinen Schlüssel zu konfigurieren. KI ist standardmäßig deaktiviert und Offline-Lesen bleibt unberührt.",
   "api-key": "API-Schlüssel",
+  "api-key-optional": "API-Schlüssel (optional)",
   "the-key-is-stored-in-obsidian-secretstorage-and-is-not-written-t": "Der Schlüssel wird in Obsidian SecretStorage gespeichert und nicht in die data.json des Plugins geschrieben.",
   "get-api-key": "API-Schlüssel abrufen",
   "model-2": "Modell",
