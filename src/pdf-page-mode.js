@@ -21,21 +21,6 @@ export function pdfPageTextForAi(items) {
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-// Keep one lightweight text node per source page until that page enters the
-// viewport. PDF.js TextLayer can create hundreds or thousands of positioned
-// spans for a single page; constructing those spans for an entire large PDF is
-// the difference between a few megabytes of searchable text and gigabytes of
-// live DOM/layout state.
-export function pdfPageTextFallback(items) {
-  let text = "";
-  for (const item of Array.isArray(items) ? items : []) {
-    if (typeof item?.str !== "string") continue;
-    text += item.str;
-    if (item.hasEOL) text += "\n";
-  }
-  return text.trim();
-}
-
 export function packPdfDocumentContext(pages, maxChars = PDF_AI_CONTEXT_MAX_CHARS) {
   const clean = (Array.isArray(pages) ? pages : []).map((page, index) => ({
     page: positiveInt(page?.page, index + 1),
@@ -45,15 +30,16 @@ export function packPdfDocumentContext(pages, maxChars = PDF_AI_CONTEXT_MAX_CHAR
 
   const sourceChars = clean.reduce((total, page) => total + page.text.length, 0);
   const render = (page, text) => `[第 ${page.page} 页]\n${text}`;
+  const full = clean.map((page) => render(page, page.text)).join("\n\n");
   const budget = Math.max(1_000, Math.round(Number(maxChars) || PDF_AI_CONTEXT_MAX_CHARS));
-  const headers = clean.reduce((total, page) => total + render(page, "").length + 2, 0);
-  if (sourceChars + headers <= budget) {
-    return { text: clean.map((page) => render(page, page.text)).join("\n\n"), pageCount: clean.length, sourceChars, truncated: false };
+  if (full.length <= budget) {
+    return { text: full, pageCount: clean.length, sourceChars, truncated: false };
   }
 
   // Keep every text-bearing page represented when a very large PDF exceeds a
   // model-safe first-turn payload. Even sampling is more useful for whole-book
   // questions than silently cutting off the second half of the document.
+  const headers = clean.reduce((total, page) => total + render(page, "").length + 2, 0);
   const perPage = Math.max(1, Math.floor((budget - headers) / clean.length));
   const packed = clean.map((page) => {
     const text = page.text.length > perPage ? `${page.text.slice(0, Math.max(1, perPage - 1)).trimEnd()}…` : page.text;
@@ -80,19 +66,13 @@ export function pdfPageShell({
   kind,
   isLast = false,
   textLayerHtml = "",
-  textFallback = "",
 }) {
   const page = positiveInt(pageNumber);
   const pageWidth = positiveInt(width);
   const pageHeight = positiveInt(height);
   const pageKind = kind === "text" ? "text" : "scan";
   const lastClass = isLast ? " qiaomu-reader-pdf-last-page" : "";
-  const escapedFallback = String(textFallback || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  const textLayer = pageKind !== "text" ? "" : textLayerHtml
-    || `<div class="qiaomu-reader-pdf-text-layer qiaomu-reader-pdf-text-placeholder" data-pdf-selectable="false">${escapedFallback}</div>`;
+  const textLayer = pageKind === "text" ? textLayerHtml : "";
   return `<div class="qiaomu-reader-pdf-page-break qiaomu-reader-pdf-${pageKind}-page${lastClass}" data-pdf-page-no="${page}" data-pdf-page-kind="${pageKind}">`
     + `<figure class="qiaomu-reader-pdf-native-page">`
     + `<div class="qiaomu-reader-pdf-page-surface" data-pdf-width="${pageWidth}" data-pdf-height="${pageHeight}">`
