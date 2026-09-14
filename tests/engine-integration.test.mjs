@@ -469,14 +469,56 @@ test("a PDF render finishing after a book switch cannot paint stale pages or sta
   const view = { pager: { flow, sw: 600, spread: 0 }, _pdfLazy: lazy };
   const sweep = vm.runInNewContext(`${functionSource('drawFigure')}\n${functionSource('sweepReaderFigures')}\nsweepReaderFigures`, {
     FIGURE_SURFACE_SELECTOR: '.surface', FIGURE_LAZY_SELECTOR: 'img', FIGURE_LOADED_ATTR: 'data-loaded',
+    FIGURE_RENDERING_CLASS: 'rendering',
     FIGURE_LOAD_SPAN: 2, FIGURE_DROP_SPAN: 6,
     figureSpreadGap: () => 0, figurePageNumber: img => Number(img.dataset.pdfPage),
     markFigureUnavailable: () => assert.fail('stale error shown'),
   });
   const pending = sweep(view, lazy);
-  view._pdfLazy = {}; release('data:image/png;base64,stale'); await pending;
+  view._pdfLazy = {}; release({ src: 'data:image/png;base64,stale', textLayer: null }); await pending;
   assert.equal(rendered, 1);
   assert.equal(flow.querySelector('img').hasAttribute('src'), false);
+  dom.window.close();
+});
+
+test("visible PDF pages gain selectable text and offscreen pages collapse back to one text node", async () => {
+  const dom = new JSDOM('<main><div class="surface"><img data-pdf-page="1" data-loaded="0"><div class="qiaomu-reader-pdf-text-layer qiaomu-reader-pdf-text-placeholder">fallback</div></div></main>');
+  dom.window.Element.prototype.addClass = function (name) { this.classList.add(name); };
+  dom.window.Element.prototype.removeClass = function (name) { this.classList.remove(name); };
+  const flow = dom.window.document.querySelector('main');
+  let gap = 0;
+  const textLayer = dom.window.document.createElement('div');
+  textLayer.className = 'qiaomu-reader-pdf-text-layer';
+  textLayer.setAttribute('data-pdf-selectable', 'true');
+  textLayer.innerHTML = '<span>selectable</span>';
+  const lazy = {
+    _destroyed: false,
+    render: async () => ({ src: 'data:image/png;base64,page', textLayer }),
+    textFor: () => 'fallback',
+  };
+  const pager = { flow, sw: 600, spread: 0, scrollMode: false };
+  const view = { pager, _pdfLazy: lazy, _closed: false };
+  const sweep = vm.runInNewContext(`${functionSource('drawFigure')}\n${functionSource('sweepReaderFigures')}\nsweepReaderFigures`, {
+    FIGURE_SURFACE_SELECTOR: '.surface', FIGURE_LAZY_SELECTOR: 'img', FIGURE_LOADED_ATTR: 'data-loaded',
+    FIGURE_RENDERING_CLASS: 'rendering',
+    FIGURE_LOAD_SPAN: 2, FIGURE_DROP_SPAN: 6,
+    figureSpreadGap: () => gap, figurePageNumber: img => Number(img.dataset.pdfPage),
+    markFigureUnavailable: () => assert.fail('page should remain renderable'),
+  });
+
+  await sweep(view, lazy);
+  assert.equal(flow.querySelector('img').getAttribute('data-loaded'), '1');
+  assert.equal(flow.querySelector('.qiaomu-reader-pdf-text-layer').getAttribute('data-pdf-selectable'), 'true');
+  assert.equal(flow.querySelectorAll('.qiaomu-reader-pdf-text-layer span').length, 1);
+
+  gap = 10;
+  await sweep(view, lazy);
+  assert.equal(flow.querySelector('img').hasAttribute('src'), false);
+  const collapsed = flow.querySelector('.qiaomu-reader-pdf-text-layer');
+  assert.equal(collapsed.classList.contains('qiaomu-reader-pdf-text-placeholder'), true);
+  assert.equal(collapsed.getAttribute('data-pdf-selectable'), 'false');
+  assert.equal(collapsed.textContent, 'fallback');
+  assert.equal(collapsed.querySelectorAll('span').length, 0);
   dom.window.close();
 });
 
