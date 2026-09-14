@@ -979,6 +979,7 @@ export const QIAOMU_READER_EN = {
   "choose-a-service": "Choose a service",
   "choose-a-service-to-configure-its-model-and-key-ai-is-off-by-def": "Choose a service to configure its model and key. AI is off by default and offline reading is unaffected.",
   "api-key": "API key",
+  "api-key-optional": "API key (optional)",
   "the-key-is-stored-in-obsidian-secretstorage-and-is-not-written-t": "The key is stored in Obsidian SecretStorage and is not written to plugin data.json.",
   "get-api-key": "Get API key",
   "model-2": "Model",

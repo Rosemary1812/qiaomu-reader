@@ -979,6 +979,7 @@ export default {
   "choose-a-service": "サービスを選択",
   "choose-a-service-to-configure-its-model-and-key-ai-is-off-by-def": "サービスを選択して、そのモデルとキーを設定します。AIはデフォルトでオフで、オフラインでの読書には影響しません。",
   "api-key": "APIキー",
+  "api-key-optional": "APIキー（任意）",
   "the-key-is-stored-in-obsidian-secretstorage-and-is-not-written-t": "キーはObsidianのSecretStorageに保存され、プラグインのdata.jsonには書き込まれません。",
   "get-api-key": "APIキーを取得",
   "model-2": "モデル",
