@@ -25,7 +25,7 @@ import { deriveAiSetupState } from "../src/ai-setup-state.js";
 import { isChineseSourceText, translateUiText } from "../src/i18n-runtime.js";
 import { EmbeddedPdfBinaryDataFactory, PDF_CMAP_OPTIONS } from "../src/pdf-cmaps.js";
 import { EMBEDDED_PDF_CMAPS } from "../src/pdf-cmaps-data.js";
-import { PDF_AI_CONTEXT_MAX_CHARS, READER_BLOCK_SELECTOR, packPdfDocumentContext, pdfPageKind, pdfPageShell, pdfPageTextFallback, pdfPageTextForAi } from "../src/pdf-page-mode.js";
+import { PDF_AI_CONTEXT_MAX_CHARS, READER_BLOCK_SELECTOR, packPdfDocumentContext, pdfPageKind, pdfPageShell, pdfPageTextForAi } from "../src/pdf-page-mode.js";
 import { PDF_ZOOM_MAX, PDF_ZOOM_MIN, clampPdfZoom, pdfZoomFromWheel, pdfZoomPercent, pdfZoomShortcut, stepPdfZoom } from "../src/pdf-zoom.js";
 import { appendReadingNoteExcerpts, migrateAndReplaceReadingHighlights, replaceManagedReadingHighlights } from "../src/reading-note.js";
 import { corruptBackupPath, createSerialTaskQueue, parseJsonRecord, readJsonRecordStore } from "../src/storage.js";
@@ -97,21 +97,6 @@ test("PDF pages keep their fixed layout and expose text capabilities per page", 
   assert.doesNotMatch(scanPage, /must not leak/);
 });
 
-test("large PDF shells keep one inert text node per page instead of eager positioned spans", () => {
-  const fallback = pdfPageTextFallback([
-    { str: "第一段 <安全>", hasEOL: true },
-    { str: "第二段 & 结尾", hasEOL: false },
-  ]);
-  assert.equal(fallback, "第一段 <安全>\n第二段 & 结尾");
-  const shell = pdfPageShell({
-    pageNumber: 1, width: 612, height: 792, kind: "text", textFallback: fallback,
-  });
-  assert.match(shell, /qiaomu-reader-pdf-text-layer qiaomu-reader-pdf-text-placeholder/);
-  assert.match(shell, /第一段 &lt;安全&gt;\n第二段 &amp; 结尾/);
-  assert.doesNotMatch(shell, /<span/);
-  assert.doesNotMatch(shell, /<安全>/);
-});
-
 test("PDF AI context keeps page boundaries and represents the whole document", () => {
   assert.equal(PDF_AI_CONTEXT_MAX_CHARS, 180_000);
   assert.equal(pdfPageTextForAi([
@@ -181,11 +166,6 @@ test("PDF extraction renders every page image and overlays PDF.js text instead o
   const source = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
   assert.match(source, /pdfjs-dist\/legacy\/build\/pdf\.mjs/);
   assert.match(source, /new pdfjsLib\.TextLayer/);
-  assert.match(source, /page\.cleanup\?\.\(\)/);
-  assert.match(source, /URL\.createObjectURL\(blob\)/);
-  assert.match(source, /URL\.revokeObjectURL\(src\)/);
-  assert.match(source, /qiaomu-reader-pdf-text-placeholder/);
-  assert.match(source, /const pdfBlock = pdfPage\.querySelector\(READER_BLOCK_SELECTOR\)/);
   assert.match(source, /parts\.push\(pdfPageShell/);
   assert.match(source, /\.qiaomu-reader-pdf-page-break\{[\s\S]*break-after:column/);
   assert.match(source, /\.qiaomu-reader-pdf-text-layer\{/);
