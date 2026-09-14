@@ -7786,7 +7786,7 @@ const ReadSettingsModal = class extends Modal {
       });
       start.addEventListener("click", () => openPluginAiSettings(this.app, plugin, () => this._draw()));
     } else {
-      const providerName = cfg.provider.label;
+      const providerName = qiaomuReaderTranslate(cfg.provider.label);
       const modelName = cfg.model || (cfg.transport === "cli" ? qiaomuReaderTranslate("model-default") : qiaomuReaderTranslate("default-model"));
       const status = new Setting(section)
         .setName(qiaomuReaderTranslate("ai-assistance-is-set-up"))
@@ -13172,7 +13172,7 @@ const SettingsTab = class extends PluginSettingTab {
     const modelName = cfg.model || (cfg.transport === "cli" ? qiaomuReaderTranslate("model-default") : qiaomuReaderTranslate("default-model"));
     setup
       .setName(qiaomuReaderTranslate("ai-assistance-is-set-up"))
-      .setDesc(`${cfg.provider.label} · ${modelName}`)
+      .setDesc(`${qiaomuReaderTranslate(cfg.provider.label)} · ${modelName}`)
       .addButton((btn) => btn
         .setButtonText(qiaomuReaderTranslate("change-service"))
         .onClick(() => openPluginAiSettings(this.app, this.plugin, () => this._redraw())));

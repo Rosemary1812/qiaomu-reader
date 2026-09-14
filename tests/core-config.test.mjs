@@ -924,6 +924,7 @@ test("settings use task tabs, concise intros, and Chinese-first copy", () => {
   assert.match(source, /aiSecrets: \{\}, aiBases: \{\}/);
   assert.match(source, /settings\.aiSecrets\?\.\[providerId\]/);
   assert.match(source, /settings\.aiBases\?\.\[id\]/);
+  assert.match(source, /qiaomuReaderTranslate\(cfg\.provider\.label\)/);
   assert.match(source, /aiModels: \{\}/);
   assert.match(source, /aiThinking: \{\}/);
   assert.match(source, /aiCliEfforts: \{\}/);
