@@ -35,6 +35,7 @@ import { captureReadingAnchor, restoreReadingAnchor, queueReadingLayout, shouldF
 import { deriveAiSetupState } from "./ai-setup-state.js";
 import { PDF_CMAP_OPTIONS } from "./pdf-cmaps.js";
 import { PDF_AI_CONTEXT_MAX_CHARS, READER_BLOCK_SELECTOR, packPdfDocumentContext, pdfPageKind, pdfPageShell, pdfPageTextFallback, pdfPageTextForAi } from "./pdf-page-mode.js";
+import { getPdfTextContent } from "./pdf-text-content.js";
 import { PDF_ZOOM_DEFAULT, PDF_ZOOM_MAX, PDF_ZOOM_MIN, clampPdfZoom, pdfZoomFromWheel, pdfZoomPercent, pdfZoomShortcut, stepPdfZoom } from "./pdf-zoom.js";
 import { appendReadingNoteExcerpts, isReadingHighlightsHeading, migrateAndReplaceReadingHighlights, replaceManagedReadingHighlights } from "./reading-note.js";
 import { cliAcpSupport, cliMeta, cliReasoningEfforts, disposeCliAiSessions, effectiveCliEffort, installCliAcp, probeCliAcp, probeCliAi, resolveAcpPath, resolveCliPath, runCliAi } from "./ai-cli.js";
@@ -6441,7 +6442,7 @@ async function readPdfPage(doc, pageNumber, signal, onProgress, total) {
   const page = await doc.getPage(pageNumber);
   try {
     throwIfReaderLoadAborted(signal);
-    const textContent = await page.getTextContent();
+    const textContent = await getPdfTextContent(page);
     throwIfReaderLoadAborted(signal);
     const textLen = pdfPageCharCount(textContent.items);
     const size = pdfPageSize(page);
@@ -6520,7 +6521,7 @@ function createPdfLazyView(doc, loadingTask, pageText) {
         if (this._destroyed) throw Object.assign(new Error("Reader closed"), { name: "AbortError" });
         const unit = page.getViewport({ scale: 1 });
         const fit = Math.max(1, Math.min(2, 1600 / Math.max(unit.width, unit.height, 1)));
-        const textContent = this._pageText[pageNumber - 1] ? await page.getTextContent() : null;
+        const textContent = this._pageText[pageNumber - 1] ? await getPdfTextContent(page) : null;
         const textLayer = textContent ? await pdfTextLayerElement(page, textContent, ownerDocument) : null;
         for (const [scale, budget] of [[fit, 15000], [fit / 2, 8000]]) {
           const viewport = page.getViewport({ scale });
