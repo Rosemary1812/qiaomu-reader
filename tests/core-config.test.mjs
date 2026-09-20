@@ -417,21 +417,26 @@ test("AI setup state separates configuration readiness from toolbar visibility",
   });
 });
 
-test("DeepSeek requests keep thinking separate and make connection checks short", () => {
+test("DeepSeek requests leave enough output budget for a final answer after reasoning", () => {
   const messages = [{ role: "user", content: "请只回答：连接成功" }];
   const testBody = buildAiRequestBody("deepseek", "deepseek-v4-flash", messages, { connectionTest: true });
   assert.equal(testBody.max_tokens, 16);
   assert.deepEqual(testBody.thinking, { type: "disabled" });
 
   const normalBody = buildAiRequestBody("deepseek", "deepseek-v4-flash", messages);
-  assert.equal(normalBody.max_tokens, 2400);
+  assert.equal("max_tokens" in normalBody, false);
   assert.deepEqual(normalBody.thinking, { type: "enabled" });
 
   const fastBody = buildAiRequestBody("deepseek", "deepseek-v4-flash", messages, { thinkingEnabled: false });
+  assert.equal(fastBody.max_tokens, 2400);
   assert.deepEqual(fastBody.thinking, { type: "disabled" });
 
   const streamBody = buildAiRequestBody("deepseek", "deepseek-v4-flash", messages, { stream: true });
   assert.equal(streamBody.stream, true);
+  assert.equal("max_tokens" in streamBody, false);
+
+  const otherProviderBody = buildAiRequestBody("openai", "gpt-4.1-mini", messages);
+  assert.equal(otherProviderBody.max_tokens, 2400);
 });
 
 test("OpenAI SSE parser separates reasoning from the final answer", () => {
