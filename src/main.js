@@ -10110,7 +10110,7 @@ const ReaderView = class extends ItemView {
   }
   async repaginate() {
     if (!this.bookHtml || this._openingBook || this._closed) return;
-    if (this.engine) { this.applyVars(); this._setRelayout(false); return; }
+    if (this.engine) { await this.applyVars(); this._setRelayout(false); return; }
     if (!readerIsPdf(this)) return;
     if (!this.areaEl.clientWidth || this.containerEl.offsetParent === null) return;
     return queueReadingLayout(this, (anchor) => this._repaginateAnchored(anchor));
@@ -10248,11 +10248,13 @@ const ReaderView = class extends ItemView {
     // Live restyle of an open engine book: re-send the appearance CSS and make
     // sure any freshly selected reading font reaches the rendered documents.
     if (this.engine) {
-      this.engine.setLayout(s);
+      const layout = this.engine.setLayout(s);
+      layout?.catch?.(error => console.warn("Qiaomu Reader: could not change EPUB reading mode", error));
       this.engine.setExtraCss(this._engineAppearanceCss());
       try {
         for (const { doc } of this.engine.contents()) void ensureSelectedReaderFont(doc, this.plugin, this.plugin.settings);
       } catch (e) { console.warn("Qiaomu Reader: could not refresh the engine font", e); }
+      return layout;
     }
   }
   nav(dir) {
@@ -11589,7 +11591,7 @@ const ReaderModal = class extends Modal {
   async _repaginate() {
     if (!this.bookHtml || this._openingBook || this._closed || !this.areaEl || !this.areaEl.clientWidth) return;
     if (this.engine) {
-      this.engine.setLayout(this.plugin.settings);
+      await this.engine.setLayout(this.plugin.settings);
       this.engine.setExtraCss(this._engineAppearanceCss());
       return;
     }
