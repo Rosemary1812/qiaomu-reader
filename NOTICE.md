@@ -10,6 +10,7 @@ Bundled dependencies retain their own licenses; esbuild preserves their legal co
 - [PDF.js](https://github.com/mozilla/pdf.js) — Apache-2.0, Mozilla Foundation.
 - [JSZip](https://github.com/Stuk/jszip) — MIT or GPLv3, Stuart Knightley and contributors.
 - [localForage](https://github.com/localForage/localForage) — Apache-2.0, Mozilla.
+- [Words CEFR Dataset](https://github.com/bonkey/words-cefr-dataset) — derived offline word-level index, MIT, copyright (c) 2024 Belikov Maxim. See [license](licenses/words-cefr-MIT.txt). Its CEFR estimates are approximate; unlisted words are not automatically annotated.
 
 Bundled font provenance and license are in `fonts/README.md` and `fonts/OFL.txt`.
 Starter books retain their Project Gutenberg notices; see `assets/starter-books/README.md`.

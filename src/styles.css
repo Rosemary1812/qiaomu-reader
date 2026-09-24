@@ -1518,3 +1518,7 @@ button.qiaomu-reader-find-item.qiaomu-reader-toc-active { background: var(--back
 .qiaomu-reader-translation-save { display: flex; gap: 2px; }
 .qiaomu-reader-translation-save svg { width: 16px; height: 16px; }
 .qiaomu-reader-translation-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-muted); font-size: var(--font-ui-small); margin-top: 12px; }
+.qiaomu-reader-english-card { position:absolute; z-index:35; width:min(290px,calc(100% - 24px)); box-sizing:border-box; padding:11px 13px; border:1px solid var(--background-modifier-border); border-radius:12px; background:var(--background-primary); color:var(--text-normal); box-shadow:0 8px 24px rgba(0,0,0,.15); font-size:13px; line-height:1.55; }
+.qiaomu-reader-english-card-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; font-weight:650; }
+.qiaomu-reader-english-card-heading button { border:0; background:transparent; color:var(--text-muted); font-size:20px; cursor:pointer; padding:0 3px; }
+.qiaomu-reader-english-card-body { margin-top:6px; white-space:pre-wrap; max-height:160px; overflow:auto; }

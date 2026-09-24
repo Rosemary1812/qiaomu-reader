@@ -67,7 +67,9 @@ const fontPayloads = bundledFonts.map(({ file, family }) => {
 });
 requireCheck(!mainSource.includes("ACP installed but its executable was not found"), "release bundle includes an ACP dependency installer");
 requireCheck(mainSource.includes(fs.readFileSync(path.join(root, "licenses/elton-reader-MIT.txt"), "utf8")), "main.js is missing the inherited MIT license");
-requireCheck(mainSource.includes("SIL OPEN FONT LICENSE Version 1.1"), "main.js is missing the bundled font license");
+requireCheck(mainSource.includes("SIL OPEN FONT LICENSE Version 1.1"), "main.js is missing the bundled font license pointer");
+requireCheck(cssSource.includes(fs.readFileSync(path.join(root, "fonts/OFL.txt"), "utf8")), "styles.css is missing the bundled font license");
+requireCheck(cssSource.includes(fs.readFileSync(path.join(root, "fonts/README.md"), "utf8")), "styles.css is missing the bundled font provenance");
 
 if (installDir) {
   const installedManifest = readJson(path.join(installDir, "manifest.json"));

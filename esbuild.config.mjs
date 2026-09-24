@@ -41,11 +41,8 @@ ${projectLicense}
 ADAPTED ELTON READER PORTIONS — ORIGINAL MIT LICENSE
 ${upstreamLicense}
 
-BUNDLED FONT PROVENANCE
-${fontProvenance}
-
-BUNDLED FONT LICENSE
-${fontLicense}
+BUNDLED FONT — SIL OPEN FONT LICENSE Version 1.1
+The full font license and provenance are included in styles.css.
 */
 ${iteratorShim}`;
 
@@ -177,8 +174,11 @@ const ctx = await esbuild.context({
 if (prod) {
   const result = await ctx.rebuild();
   const fontData = fs.readFileSync("fonts/QiaomuReadingFangsong.woff2").toString("base64");
-  const css = fs.readFileSync("src/styles.css", "utf8") + `\n/* Bundled reading subset: SIL OFL 1.1\n${fontLicense}\n*/\n@font-face { font-family: 'QBR Zhuque Fangsong'; src: url('data:font/woff2;base64,${fontData}') format('woff2'); font-style: normal; font-weight: 400; font-display: swap; }\n`;
-  fs.writeFileSync(path.join(profile.outputDir, "styles.css"), css);
+  const cefrData = fs.readFileSync("src/english-cefr.json").toString("base64");
+  const css = fs.readFileSync("src/styles.css", "utf8") + `\n/* BUNDLED FONT PROVENANCE\n${fontProvenance}\nBUNDLED FONT LICENSE — SIL OFL 1.1\n${fontLicense}\n*/\n@font-face { font-family: 'QBR Zhuque Fangsong'; src: url('data:font/woff2;base64,${fontData}') format('woff2'); font-style: normal; font-weight: 400; font-display: swap; }\n`;
+  const wordDataLicense = fs.readFileSync("licenses/words-cefr-MIT.txt", "utf8");
+  const wordDataCss = `\n/* Offline CEFR levels: https://github.com/bonkey/words-cefr-dataset\n${wordDataLicense}\n*/\n:root{--qiaomu-cefr-data:"${cefrData}"}\n`;
+  fs.writeFileSync(path.join(profile.outputDir, "styles.css"), css + wordDataCss);
   if (profile.name === "community") {
     fs.copyFileSync("manifest.json", path.join(profile.outputDir, "manifest.json"));
     fs.writeFileSync(path.join(profile.outputDir, "build-info.json"), JSON.stringify({

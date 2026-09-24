@@ -70,7 +70,9 @@ test("library covers fill the card and offer only the book menu", async () => {
   x.window.HTMLImageElement.prototype.decode = async () => {};
   const shown = await x.library.showImg(cover, cover.querySelector(".qiaomu-reader-lib-ph"), "data:image/png;base64,cover");
   assert.equal(shown, true);
-  assert.equal(cover.style.getPropertyValue("background-size"), "cover");
+  assert.equal(cover.classList.contains("qiaomu-reader-cover-img"), true);
+  const styles = fs.readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  assert.match(styles, /\.qiaomu-reader-lib-cover\.qiaomu-reader-cover-img[^}]*background-size:\s*cover/);
 });
 
 test("reopening highlights from library preserves an already open panel", async () => {

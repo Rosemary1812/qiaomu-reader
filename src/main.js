@@ -3,6 +3,7 @@ import { watchQuietUi } from "./quiet-ui.js";
 import { STARTER_BOOKS } from "./starter-book-data.js";
 import { createStarterLibraryInstaller, findStarterBook } from "./starter-library.js";
 import { isNonChineseSource } from "./ai-source-language.js";
+import { createEnglishGlossLayer, englishSelectionKind, visibleEnglishWords } from "./english-reading.js";
 import { HL_COLOR_SWATCHES } from "./highlight-colors.js";
 /*
  * Qiaomu Reader — source.
@@ -99,6 +100,7 @@ const DEFAULT_APPEARANCE = {
 };
 const DEFAULT_TRANSLATION = {
   translateEnabled: false, translateTo: "zh-CN",
+  englishGlossEnabled: false, englishCefrLevel: "B1", englishAutoTranslate: true,
 };
 const DEFAULT_LIBRARY_UI = {
   bookNoteLinks: {}, locationMarks: [], bookNotePrompted: {},
@@ -768,6 +770,27 @@ function handleAreaNavClick(view, e) {
 // iframe events do not bubble to the host's immersive chrome or tap zones.
 // Convert section coordinates before reusing the reader's navigation rules.
 function attachEngineChrome(view, doc, index) {
+  if (view.file?.extension === "epub") {
+    doc.addEventListener("dblclick", () => {
+      view._englishDoubleClickAt = Date.now();
+      const selection = doc.getSelection();
+      if (selection && !selection.isCollapsed && selection.rangeCount) {
+        const range = selection.getRangeAt(0);
+        const frame = doc.defaultView?.frameElement?.getBoundingClientRect();
+        const rect = range.getBoundingClientRect();
+        if (englishSelectionKind(selection.toString(), true) === "word") {
+          let cfi;
+          try { cfi = view.engine?.cfiFromRange(index, range); } catch { /* selection may have moved */ }
+          if (cfi) view._englishLastSelection = `${view.file.path}:${cfi}:${selection.toString()}`;
+          void englishSelectionResult(view, doc, selection.toString().trim(), {
+            left: rect.left + (frame?.left || 0), bottom: rect.bottom + (frame?.top || 0),
+          }, "word");
+        }
+      }
+    });
+    doc.addEventListener("scroll", () => void refreshEnglishGlosses(view, doc), { passive: true });
+    window.setTimeout(() => void refreshEnglishGlosses(view, doc), 100);
+  }
   doc.addEventListener("pointerdown", (event) => {
     view._armImmersive?.();
     beginReaderSelection(view, event);
@@ -4287,6 +4310,97 @@ async function aiExplain(text, plugin, turns, book, options = {}) {
     throw err;
   }
   return out;
+}
+
+const englishGlossCache = new Map();
+const englishReadingLabel = (zh, en) => qiaomuReaderLanguage === "zh" ? zh : en;
+function englishAiTask(plugin, prompt, signal) {
+  return aiExplain("", plugin, [{ role: "user", content: prompt }], "", { signal });
+}
+function englishCard(view, rect, title, message) {
+  view._englishCard?.remove();
+  const card = view.contentEl.createDiv("qiaomu-reader-english-card");
+  view._englishCard = card;
+  const bounds = view.contentEl.getBoundingClientRect();
+  card.style.left = `${Math.max(12, Math.min(rect.left - bounds.left, bounds.width - 300))}px`;
+  card.style.top = `${Math.max(12, Math.min(rect.bottom - bounds.top + 8, bounds.height - 135))}px`;
+  const heading = card.createDiv("qiaomu-reader-english-card-heading");
+  heading.createSpan({ text: title });
+  const close = heading.createEl("button", { text: "×", attr: { type: "button", "aria-label": englishReadingLabel("关闭释义", "Close definition") } });
+  close.addEventListener("click", () => { card.remove(); if (view._englishCard === card) view._englishCard = null; });
+  const body = card.createDiv({ cls: "qiaomu-reader-english-card-body", text: message });
+  return { card, body };
+}
+async function englishSelectionResult(view, doc, text, rect, kind) {
+  if (view.file?.extension !== "epub") return;
+  const token = view._englishResultToken = (view._englishResultToken || 0) + 1;
+  const { card, body } = englishCard(view, rect, kind === "word" ? text : englishReadingLabel("选文翻译", "Selection translation"), englishReadingLabel("正在生成…", "Generating…"));
+  if (!aiSetupState(view.plugin).enabled) {
+    body.setText(englishReadingLabel("请先配置并启用 AI 伴读。", "Configure and enable AI assistance first."));
+    const setup = card.createEl("button", { text: englishReadingLabel("配置 AI", "Set up AI"), attr: { type: "button" } });
+    setup.addEventListener("click", () => openPluginAiSettings(view.app, view.plugin));
+    return;
+  }
+  const context = String(doc.getSelection()?.anchorNode?.parentElement?.closest("p,li,blockquote")?.textContent || "").slice(0, 450);
+  const prompt = kind === "word"
+    ? `请根据上下文给英文单词“${text}”提供最贴切的简体中文短释（不超过12字），下一行可给出词性和另一种常见释义。不要输出无关内容。\n上下文：${context}`
+    : `请将下列英文原文忠实译成简体中文，只输出译文；必要时在末尾用一句话说明有歧义的术语：\n${text}`;
+  try {
+    const result = kind === "word" && englishGlossCache.has(text.toLowerCase())
+      ? englishGlossCache.get(text.toLowerCase()) : await englishAiTask(view.plugin, prompt);
+    if (token !== view._englishResultToken || !card.isConnected) return;
+    body.setText(result);
+    if (kind === "word") englishGlossCache.set(text.toLowerCase(), result);
+  } catch (error) {
+    if (token === view._englishResultToken && card.isConnected) body.setText(`${englishReadingLabel("查询失败", "Lookup failed")}：${error.message || englishReadingLabel("请检查 AI 服务", "Check the AI service")}`);
+  }
+}
+function scheduleEnglishSelection(view, doc, text, rect, cfi) {
+  if (view.file?.extension !== "epub" || view.plugin.settings.englishAutoTranslate === false) return;
+  window.clearTimeout(view._englishSelectionTimer);
+  const key = `${view.file.path}:${cfi}:${text}`;
+  view._englishSelectionTimer = window.setTimeout(() => {
+    if (view._selectionDragging || doc.getSelection()?.isCollapsed || view.file?.extension !== "epub") return;
+    const doubleClick = Date.now() - (view._englishDoubleClickAt || 0) < 650;
+    const kind = englishSelectionKind(text, doubleClick);
+    if (!kind || view._englishLastSelection === key) return;
+    view._englishLastSelection = key;
+    void englishSelectionResult(view, doc, text.trim(), rect, kind);
+  }, 320);
+}
+function clearEnglishSelection(view) {
+  view._englishResultToken = (view._englishResultToken || 0) + 1;
+  view._englishCard?.remove();
+  view._englishCard = null;
+  window.clearTimeout(view._englishSelectionTimer);
+  view._englishLastSelection = null;
+}
+async function refreshEnglishGlosses(view, doc) {
+  if (view.file?.extension !== "epub" || !view.plugin.settings.englishGlossEnabled) return;
+  if (!view._englishGlossLayers) view._englishGlossLayers = new WeakMap();
+  let layer = view._englishGlossLayers.get(doc);
+  if (!layer) { layer = createEnglishGlossLayer(doc); view._englishGlossLayers.set(doc, layer); }
+  const items = visibleEnglishWords(doc, view.plugin.settings.englishCefrLevel || "B1");
+  layer.draw(items.map(item => ({ range: item.range, gloss: englishGlossCache.get(item.word.toLowerCase())?.split("\n")[0] })));
+  if (!items.length || !aiSetupState(view.plugin).enabled) return;
+  const pending = items.filter(item => !englishGlossCache.has(item.word.toLowerCase())).slice(0, 20);
+  if (!pending.length) return;
+  const batchKey = pending.map(item => item.word.toLowerCase()).join("|");
+  if (view._englishGlossBatch === batchKey) return;
+  view._englishGlossBatch = batchKey;
+  const entries = pending.map(item => ({ word: item.word, context: item.sentence }));
+  try {
+    const answer = await englishAiTask(view.plugin, `请根据语境为每个英文单词给出准确的简体中文短释（每项不超过6字）。只返回 JSON 对象，键为原单词，值为短释，不要 Markdown。\n${JSON.stringify(entries)}`);
+    const parsed = JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+    for (const item of pending) {
+      const value = parsed[item.word];
+      if (typeof value === "string" && value.length <= 24) englishGlossCache.set(item.word.toLowerCase(), value.trim());
+    }
+    if (doc.isConnected && view.file?.extension === "epub" && view.plugin.settings.englishGlossEnabled) {
+      layer.draw(visibleEnglishWords(doc, view.plugin.settings.englishCefrLevel || "B1").map(item => ({ range: item.range, gloss: englishGlossCache.get(item.word.toLowerCase())?.split("\n")[0] })));
+    }
+  } catch (error) { console.warn("Qiaomu Reader: English gloss request failed", error); }
+  finally { if (view._englishGlossBatch === batchKey) view._englishGlossBatch = null; }
 }
 async function aiTestConnection(plugin) {
   const cfg = aiConfig(plugin);
@@ -8116,6 +8230,31 @@ const ReadSettingsModal = class extends Modal {
     lineRange.addEventListener("change", async () => {
       settings.lineHeight = Math.round(Number(lineRange.value) * 20) / 20; await this._apply(true);
     });
+    colA.createDiv("qiaomu-reader-rs-h").setText(englishReadingLabel("英文 EPUB 辅助阅读", "English EPUB assistance"));
+    new Setting(colA).setName(englishReadingLabel("词上中文小注", "Chinese glosses above words"))
+      .setDesc(englishReadingLabel("按英语水平标记较难的单词；需要先配置 AI 伴读。", "Annotate words above your level; requires AI assistance."))
+      .addToggle(toggle => toggle.setValue(!!settings.englishGlossEnabled).onChange(async value => {
+        settings.englishGlossEnabled = value;
+        await this._apply(true);
+        for (const { doc } of view.engine?.contents() || []) {
+          if (!value) { view._englishGlossLayers?.get(doc)?.remove(); view._englishGlossLayers = new WeakMap(); }
+          else void refreshEnglishGlosses(view, doc);
+        }
+      }));
+    new Setting(colA).setName(englishReadingLabel("我的英语水平", "My English level"))
+      .setDesc(englishReadingLabel("只标注高于该等级的词。", "Only annotate words above this level."))
+      .addDropdown(dropdown => {
+        for (const level of ["A1", "A2", "B1", "B2", "C1", "C2"]) dropdown.addOption(level, level);
+        dropdown.setValue(settings.englishCefrLevel || "B1").onChange(async level => {
+          settings.englishCefrLevel = level; await this._apply(true);
+          for (const { doc } of view.engine?.contents() || []) void refreshEnglishGlosses(view, doc);
+        });
+      });
+    new Setting(colA).setName(englishReadingLabel("选中即 AI 翻译", "Translate selection with AI"))
+      .setDesc(englishReadingLabel("拖选英文句子或段落后生成中文译文；双击英文单词可查词。", "Drag across a sentence for a Chinese translation; double-click a word to look it up."))
+      .addToggle(toggle => toggle.setValue(settings.englishAutoTranslate !== false).onChange(async value => {
+        settings.englishAutoTranslate = value; await view.plugin.saveAll();
+      }));
   }
   _fillPdfScale(colA, view) {
     colA.createDiv("qiaomu-reader-rs-h").setText(qiaomuReaderTranslate("pdf-zoom"));
@@ -9903,7 +10042,9 @@ const ReaderView = class extends ItemView {
       },
       onRelocate: (detail) => {
         if (this.file?.path !== file.path || this.engine !== engine || loadToken.signal.aborted) return;
+        clearEnglishSelection(this);
         updateEngineLocation(this, detail);
+        for (const { doc } of engine.contents()) void refreshEnglishGlosses(this, doc);
       },
     });
     try {
@@ -9954,6 +10095,7 @@ const ReaderView = class extends ItemView {
         : { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height, x: r.left, y: r.top };
       this._showHlPopup(rect);
       syncOpenAiSelectionContext(this, range);
+      scheduleEnglishSelection(this, doc, text, rect, cfi);
     } catch (e) { console.warn("Qiaomu Reader: could not place the highlight popup", e); }
   }
   // Re-paint stored CFI highlights after reopen; block-anchored highlights
@@ -9975,7 +10117,8 @@ const ReaderView = class extends ItemView {
     // reader's typography and theme travel into that document explicitly.
     const s = this.plugin.settings;
     const t = qiaomuReaderTheme(s);
-    return readerTextCss(s, t, resolveReaderFont(s, FONTS), this.contentEl);
+    return readerTextCss(s, t, resolveReaderFont(s, FONTS), this.contentEl)
+      + (this.file?.extension === "epub" && s.englishGlossEnabled ? "body p,body li,body blockquote{line-height:2.1!important}" : "");
   }
   _maybePromptBookNote(file) { // first open of a book: auto-link or ask once
     const settings = this.plugin.settings;
@@ -11305,7 +11448,6 @@ const LibraryModal = class extends Modal {
     ph.addClass("qiaomu-reader-hidden");
     coverEl.style.setProperty("background-image", `url("${src.replace(/"/g, '\\"')}")`, "important");
     coverEl.addClass("qiaomu-reader-cover-img");
-    coverEl.style.setProperty("background-size", "cover", "important");
     coverEl.addClass("qiaomu-reader-has-cover");
     return true;
   }
@@ -11806,7 +11948,9 @@ const ReaderModal = class extends Modal {
       },
       onRelocate: (detail) => {
         if (this.file?.path !== file.path || this.engine !== engine || loadToken.signal.aborted) return;
+        clearEnglishSelection(this);
         updateEngineLocation(this, detail);
+        for (const { doc } of engine.contents()) void refreshEnglishGlosses(this, doc);
       },
     });
     try {
@@ -11832,7 +11976,8 @@ const ReaderModal = class extends Modal {
   _engineAppearanceCss() {
     const s = this.plugin.settings;
     const t = qiaomuReaderTheme(s);
-    return readerTextCss(s, t, resolveReaderFont(s, FONTS), this.contentEl);
+    return readerTextCss(s, t, resolveReaderFont(s, FONTS), this.contentEl)
+      + (this.file?.extension === "epub" && s.englishGlossEnabled ? "body p,body li,body blockquote{line-height:2.1!important}" : "");
   }
   _engineSelectionCheck({ doc, index }) {
     if (!this.engine || !this.file) return;
@@ -11858,6 +12003,7 @@ const ReaderModal = class extends Modal {
         : { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height, x: r.left, y: r.top };
       this._showHlPopup(rect);
       syncOpenAiSelectionContext(this, range);
+      scheduleEnglishSelection(this, doc, text, rect, cfi);
     } catch (e) { console.warn("Qiaomu Reader: could not place the highlight popup", e); }
   }
   _renderEngineHighlights() {
