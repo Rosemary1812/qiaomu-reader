@@ -3,6 +3,8 @@ on:
   workflow_dispatch:
   push:
     paths:
+      - "vim-nav-i18n.patch"
+      - "vim-nav-main.patch"
       - "vim-nav-remaining.patch"
       - ".github/workflows/apply-vim-nav-patch.yml"
 jobs:
@@ -15,14 +17,19 @@ jobs:
         with:
           ref: feat/vim-nav-keys
           fetch-depth: 0
-      - name: Restore bases from main, apply patch, cleanup junk
+      - name: Restore bases from main, apply patches, cleanup junk
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git checkout origin/main -- src/i18n-en.js src/i18n-zh.js src/locales src/main.js
-          git apply --verbose vim-nav-remaining.patch
+          if [ -f vim-nav-remaining.patch ] && grep -q 'src/main.js' vim-nav-remaining.patch && grep -q 'handleReaderKeydown' vim-nav-remaining.patch; then
+            git apply --verbose vim-nav-remaining.patch
+          else
+            git apply --verbose vim-nav-i18n.patch
+            git apply --verbose vim-nav-main.patch
+          fi
           rm -f src/_b64_test.js src/_url_test.js src/_size_test_50k.js src/i18n-en.js.test-uri || true
           git add -A
           if git diff --cached --quiet; then

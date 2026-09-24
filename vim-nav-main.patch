@@ -1,0 +1,311 @@
+--- a/src/main.js
++++ b/src/main.js
+@@ -13,6 +13,7 @@
+  */
+ import { AbstractInputSuggest, Component, FuzzySuggestModal, ItemView, MarkdownView, MarkdownRenderer, Menu, Modal, Notice, Platform, Plugin, PluginSettingTab, Scope, SecretComponent, Setting, TFile, TFolder, normalizePath, requestUrl, setIcon } from "obsidian";
+ import { EpubEngine, ENGINE_EXTENSIONS, coverFromBytes } from "./reader-engine.js";
++import { VIM_NAV_SETTING, VIM_GG_WINDOW_MS, createVimChordState, isTypingTarget, resolveVimNavAction, scrollStepPx } from "./vim-nav.js";
+ import { coverPalette, migrateCoverCache } from "./book-cover.js";
+ // One place decides which extensions the reader opens: the rendering engine
+ // handles everything here except PDF, which keeps its dedicated pdf.js path.
+@@ -145,6 +146,7 @@
+   // always available when the reader does want to open it.
+   bookNoteAppendPromptSeen: false,
+   languagePicked: false, readMode: "pages", pageTurnAnimation: true,
++  vimNavKeys: false,
+   progressToFrontmatter: false, quoteTemplate: "", quoteBacklinks: true,
+   quoteBacklinkLabel: "", noteOpenMode: "split", maxLineCh: 0,
+   notesNextToBook: false, perDevice: false, deviceProfiles: {},
+@@ -780,6 +782,13 @@
+       clientX: event.clientX + frame.left,
+     })) event.preventDefault();
+   });
++  // Capture-phase so a handled vim key does not also fire bindEngineKeys
++  // (which would double-turn pages on Space / arrows when both apply).
++  doc.addEventListener("keydown", (event) => {
++    if (handleReaderKeydown(view, event, { fromEngine: true, skipLegacyNav: true })) {
++      event.stopImmediatePropagation();
++    }
++  }, true);
+ }
+ // Reader chrome lives above the page rather than reserving rows around it. In
+ // immersive mode it retracts after a short pause and returns through several
+@@ -984,6 +993,173 @@
+   view.areaEl.addEventListener("touchmove", onMove, { passive: false });
+   view.areaEl.addEventListener("touchend", onEnd, { passive: true });
+   view.areaEl.addEventListener("click", (ev) => handleAreaNavClick(view, ev));
++}
++
++function readerVimScrollMode(view) {
++  return view?.plugin?.settings?.readMode === "scroll" || !!(view?.pager?.scrollMode);
++}
++
++function readerVimViewportH(view) {
++  if (view?.pager?.scrollMode && view.pager.clip) return view.pager.clip.clientHeight || 0;
++  return view?.areaEl?.clientHeight || 0;
++}
++
++function vimNavTurn(view, dir) {
++  (view.nav || view._nav).call(view, dir);
++}
++
++function vimNavScroll(view, dy) {
++  if (!dy) return;
++  if (view.pager?.scrollMode && view.pager.clip) {
++    view.pager.clip.scrollBy({ top: dy, behavior: "auto" });
++    return;
++  }
++  if (view.engine && readerVimScrollMode(view)) {
++    view.engine.scrollBy(0, dy);
++  }
++}
++
++function vimNavBookEdge(view, end) {
++  if (view.engine) {
++    void view.engine.goToFraction(end ? 1 : 0).catch((error) => {
++      console.warn("Qiaomu Reader: could not jump to book edge", error);
++    });
++    return;
++  }
++  if (!view.pager) return;
++  const target = end ? Math.max(0, (view.pager.total || 1) - 1) : 0;
++  const [cur, tot] = view.pager.jumpTo(target);
++  (view.updateUI || view._updateUI).call(view, cur, tot);
++  if (view.file) view.plugin.saveProgress(view.file.path, cur, tot, view.pager.currentBlockIndex());
++}
++
++function vimNavChapter(view, dir) {
++  const items = view.tocItems || [];
++  if (!items.length) return;
++  let idx = -1;
++  if (view.engine) {
++    const loc = view.engine.currentLocation() || view._engineLocation;
++    const href = loc?.tocItem?.href;
++    const label = loc?.tocItem?.label;
++    if (href) idx = items.findIndex((it) => it.href === href);
++    if (idx < 0 && label) idx = items.findIndex((it) => it.label === label);
++  } else {
++    const block = typeof view.pager?.currentBlockIndex === "function" ? view.pager.currentBlockIndex() : 0;
++    for (let i = 0; i < items.length; i++) {
++      if (typeof items[i].block === "number" && items[i].block <= block) idx = i;
++      else if (typeof items[i].block === "number" && items[i].block > block) break;
++    }
++  }
++  const next = idx + (dir === "next" ? 1 : -1);
++  if (next < 0 || next >= items.length) return;
++  const item = items[next];
++  if (view.engine && item && item.href) {
++    void navigateEngineToc(view, item.href);
++    return;
++  }
++  if (item && typeof item.block === "number") view._jumpToBlock(item.block);
++}
++
++function vimNavTogglePanel(view, name) {
++  const toggle = view.togglePanel || view._togglePanel;
++  toggle.call(view, name);
++  if (name === "find" && view.panelOpen === "find" && view._findInput) {
++    qiaomuReaderAutoFocus(view._findInput, 80);
++  }
++}
++
++function vimNavCloseOverlay(view) {
++  (view.closePanel || view._closePanel)?.call(view);
++  view._hideHlPopup?.();
++}
++
++function vimNavToggleImmersive(view) {
++  const s = view.plugin.settings;
++  s.immersive = !(s.immersive !== false);
++  void view.plugin.saveAll();
++  view._armImmersive?.();
++}
++
++function dispatchVimNavAction(view, action) {
++  if (!action || !view) return;
++  const vh = readerVimViewportH(view);
++  switch (action.type) {
++    case "page-next": vimNavTurn(view, "next"); break;
++    case "page-prev": vimNavTurn(view, "prev"); break;
++    case "scroll-down": vimNavScroll(view, scrollStepPx(vh)); break;
++    case "scroll-up": vimNavScroll(view, -scrollStepPx(vh)); break;
++    case "scroll-page-down": vimNavScroll(view, Math.max(1, vh)); break;
++    case "scroll-page-up": vimNavScroll(view, -Math.max(1, vh)); break;
++    case "chapter-next": vimNavChapter(view, "next"); break;
++    case "chapter-prev": vimNavChapter(view, "prev"); break;
++    case "book-start": vimNavBookEdge(view, false); break;
++    case "book-end": vimNavBookEdge(view, true); break;
++    case "panel-toc": vimNavTogglePanel(view, "toc"); break;
++    case "panel-highlights": vimNavTogglePanel(view, "highlights"); break;
++    case "panel-find": vimNavTogglePanel(view, "find"); break;
++    case "close-overlay": vimNavCloseOverlay(view); break;
++    case "toggle-immersive": vimNavToggleImmersive(view); break;
++    default: break;
++  }
++}
++
++// Shared keydown for leaf reader, fullscreen modal, and engine iframes.
++// Returns true when the event was handled (caller should stop).
++function handleReaderKeydown(view, ev, opts = {}) {
++  if (!view?.bookHtml || ev.defaultPrevented) return false;
++  const focused = (ev.target && ev.target.ownerDocument && ev.target.ownerDocument.activeElement) || ev.target;
++  if (isTypingTarget(focused) || isTypingTarget(ev.target)) return false;
++
++  if (!opts.fromEngine) {
++    const zoom = readerIsPdf(view) && pdfZoomShortcut(ev);
++    if (zoom) {
++      ev.preventDefault();
++      if (zoom === "reset") applyPdfZoom(view, PDF_ZOOM_DEFAULT);
++      else changePdfZoom(view, zoom === "in" ? 1 : -1);
++      return true;
++    }
++  }
++
++  const enabled = view.plugin?.settings?.[VIM_NAV_SETTING] === true;
++  if (enabled) {
++    const chord = view._vimChord || (view._vimChord = createVimChordState());
++    const now = Date.now();
++    if (chord.pendingG && now - chord.pendingG >= VIM_GG_WINDOW_MS) chord.pendingG = 0;
++    const action = resolveVimNavAction(ev, {
++      enabled: true,
++      scrollMode: readerVimScrollMode(view),
++      pendingG: chord.pendingG,
++      now,
++    });
++    if (action) {
++      if (action.type === "arm-g") {
++        chord.pendingG = action.now || now;
++        ev.preventDefault();
++        return true;
++      }
++      chord.pendingG = 0;
++      ev.preventDefault();
++      dispatchVimNavAction(view, action);
++      return true;
++    }
++  }
++
++  if (opts.skipLegacyNav) return false;
++
++  // When vim is on and scroll mode, Space is already handled above. When vim
++  // is off (or the key is an arrow), keep today's page-turning behaviour.
++  // Engine iframes keep using bindEngineKeys for arrows/space.
++  if (opts.fromEngine) return false;
++
++  const toNext = ["ArrowRight", "ArrowDown", " "];
++  const toPrev = ["ArrowLeft", "ArrowUp"];
++  const step = toNext.includes(ev.key) ? "next" : toPrev.includes(ev.key) ? "prev" : null;
++  if (step) {
++    ev.preventDefault();
++    vimNavTurn(view, step);
++    return true;
++  }
++  return false;
+ }
+ 
+ // Zoom gestures and immersive chrome behave the same once either host's DOM
+@@ -1632,6 +1808,40 @@
+           const reader = this.app.workspace.getActiveViewOfType(ReaderView);
+           if (!reader || !reader.file) return false;
+           if (!probe) reader.exportHighlights();
++          return true;
++        },
++      },
++      {
++        id: "highlight-selection", name: qiaomuReaderTranslate("highlight-selection"),
++        checkCallback: (probe) => {
++          const reader = this.app.workspace.getActiveViewOfType(ReaderView);
++          const target = (reader && reader.bookHtml) ? reader : (this._openReaderModal?.bookHtml ? this._openReaderModal : null);
++          if (!target || !target.file) return false;
++          const captureLive = () => {
++            if (target._pendingSel || target._editHlId) return true;
++            if (target.engine) {
++              try {
++                for (const { doc, index } of target.engine.contents()) {
++                  let sel = null;
++                  try { sel = doc.getSelection(); } catch { continue; }
++                  if (sel && !sel.isCollapsed && sel.toString().trim()) {
++                    if (!probe) target._engineSelectionCheck({ doc, index });
++                    return true;
++                  }
++                }
++              } catch { /* no rendered sections yet */ }
++              return false;
++            }
++            const found = flowSelectionParts(target);
++            if (!found) return false;
++            if (!probe) raiseSelectionPopup(target, found.parts, found.range);
++            return true;
++          };
++          if (!captureLive()) return false;
++          if (!probe) {
++            if (!target._currentHl()) return false;
++            target._applyPopupColor(target.plugin.settings.defaultHlColor || "yellow");
++          }
+           return true;
+         },
+       },
+@@ -10049,26 +10259,11 @@
+       }
+     });
+     this.registerDomEvent(docOf(this.containerEl), "keydown", (ev) => {
+-      if (!this.bookHtml) {
+-        return;
+-      }
++      if (!this.bookHtml) return;
+       const focused = docOf(this.areaEl).activeElement;
+-      if (focused && (focused.tagName === "INPUT" || focused.tagName === "TEXTAREA" || focused.isContentEditable)) return;
++      if (isTypingTarget(focused)) return;
+       if (!this.containerEl.contains(focused) && this.app.workspace.getActiveViewOfType(this.constructor) !== this) return;
+-      const zoom = readerIsPdf(this) && pdfZoomShortcut(ev);
+-      if (zoom) {
+-        ev.preventDefault();
+-        if (zoom === "reset") applyPdfZoom(this, PDF_ZOOM_DEFAULT);
+-        else changePdfZoom(this, zoom === "in" ? 1 : -1);
+-        return;
+-      }
+-      const toNext = ["ArrowRight", "ArrowDown", " "];
+-      const toPrev = ["ArrowLeft", "ArrowUp"];
+-      const step = toNext.includes(ev.key) ? "next" : toPrev.includes(ev.key) ? "prev" : null;
+-      if (step) {
+-        ev.preventDefault();
+-        this.nav(step);
+-      }
++      handleReaderKeydown(this, ev);
+     });
+     attachReaderSwipeNav(this);
+     wireReaderChrome(this, root);
+@@ -11398,6 +11593,12 @@
+     attachReaderContentClick(this);
+     attachReaderSwipeNav(this);
+     wireReaderChrome(this, root);
++    const pageDocForKeys = docOf(this.contentEl);
++    pageDocForKeys.addEventListener("keydown", (ev) => {
++      if (!this.bookHtml || this._closed) return;
++      if (isTypingTarget(pageDocForKeys.activeElement) || isTypingTarget(ev.target)) return;
++      handleReaderKeydown(this, ev);
++    });
+   }
+   async _applyContentStyle() {
+     await this._repaginate();
+@@ -11834,6 +12035,7 @@
+     this.settPan.classList.toggle("qiaomu-reader-panel-open", name === "settings");
+     this.tocPan.classList.toggle("qiaomu-reader-panel-open", name === "toc");
+     this.hlPan.classList.toggle("qiaomu-reader-panel-open", name === "highlights");
++    if (this.findPan) this.findPan.classList.toggle("qiaomu-reader-panel-open", name === "find");
+     this.overlayEl.classList.add("qiaomu-reader-overlay-on");
+   }
+   _closePanel() {
+@@ -12422,6 +12624,12 @@
+         this._repaginateOpenBooks();
+         this._redraw();
+       });
++
++    this._readingToggle(c,
++      "vim-style-shortcuts",
++      "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused",
++      s.vimNavKeys === true,
++      async (v) => { s.vimNavKeys = v; await this.plugin.saveAll(); });
+ 
+     if (s.readMode !== "scroll") this._readingDropdown(c,
+       "pages-side-by-side", "two-pages-are-shown-only-on-a-wide-screen",
