@@ -11,5 +11,5 @@ Bundled dependencies retain their own licenses; esbuild preserves their legal co
 - [JSZip](https://github.com/Stuk/jszip) — MIT or GPLv3, Stuart Knightley and contributors.
 - [localForage](https://github.com/localForage/localForage) — Apache-2.0, Mozilla.
 
-Bundled font provenance and license are in `fonts/README.md` and `fonts/OFL.txt`.
+Bundled font provenance and licenses are in `fonts/README.md`, `fonts/OFL.txt` (Zhuque Fangsong), and `fonts/OpenDyslexic-OFL.txt` (OpenDyslexic).
 Starter books retain their Project Gutenberg notices; see `assets/starter-books/README.md`.
