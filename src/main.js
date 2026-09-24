@@ -48,6 +48,18 @@ import { normalizeCustomFontFamily, resolveReaderFont, readerTextCss, syncPageBu
 import { BUNDLED_FONT_FAMILIES, ensureBundledReaderFont } from "./bundled-fonts.js";
 import { cloneJson, createSerialTaskQueue, isPlainRecord, mergeReadingProgress, readJsonRecordStore, writeVerifiedJsonRecord } from "./storage.js";
 import { createReaderLoadCoordinator, isReaderLoadAbort, throwIfReaderLoadAborted, waitForReaderFrame } from "./reader-load.js";
+import { CalibreSearchModal, calibreSafeFilename } from "./calibre-modal.js";
+import { calibreRuntime } from "./calibre-node.js";
+import {
+  calibreCoverPath,
+  detectCalibredbPath,
+  detectCalibreLibraryPath,
+  findCalibreImport,
+  forgetCalibreImportByPath,
+  openCalibreShowBook,
+  readCoverDataUrl,
+  readLibraryFile,
+} from "./calibre-library.js";
 
 // Interface language is local to this plugin; dictionaries are bundled offline.
 let qiaomuReaderLanguage = "zh";
@@ -71,6 +83,7 @@ const AI_CHAT_VIEW_TYPE = "qiaomu-book-reader-ai-chat";
 const DEFAULT_SHELF = {
   // Interface language IDs are defined in UI_LANGUAGES.
   language: "zh", booksFolder: "", noteTemplate: "", notesFolder: "", bookNotesFolder: "",
+  calibreLibraryPath: "", calibreCalibredbPath: "", calibreImports: {},
   // Optional template used only for the one reading note created for each book.
   // It is deliberately separate from noteTemplate, which belongs to standalone
   // excerpt notes. Reusing that template could turn a reading note into a person,
@@ -88,7 +101,7 @@ const DEFAULT_TRANSLATION = {
   translateEnabled: false, translateTo: "zh-CN",
 };
 const DEFAULT_LIBRARY_UI = {
-  bookNoteLinks: {}, locationMarks: [], bookNotePrompted: {}, coverFits: {},
+  bookNoteLinks: {}, locationMarks: [], bookNotePrompted: {},
   syncMode: "auto", libCategory: "all",
 };
 const DEFAULT_READER_SESSION = {
@@ -548,8 +561,6 @@ function icon(n) {
     "more": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>`,
     "search": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
     "qiaomu-library": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.2c3.2-.8 5.9-.2 8.5 1.7v12.2c-2.6-1.9-5.3-2.5-8.5-1.7z"/><path d="M20.5 5.2c-3.2-.8-5.9-.2-8.5 1.7v12.2c2.6-1.9 5.3-2.5 8.5-1.7z"/><path d="M6.5 9.1c1.1 0 2.1.2 3 .7"/><path d="M17.5 9.1c-1.1 0-2.1.2-3 .7"/></svg>`,
-    "cover-fit": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`,
-    "cover-fill": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`,
     "bookmark": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`,
     "copy": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
     "translate": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h7M9 3v2c0 4.4-2.2 7-5 8"/><path d="M5 9c0 2.5 2.5 4.5 6 6"/><path d="M12.5 20l4.2-9.5L21 20M14.3 16.2h4.8"/></svg>`,
@@ -1657,6 +1668,28 @@ const QiaomuBookReader = class extends Plugin {
         id: "open-book-picker", name: qiaomuReaderTranslate("open-a-book"),
         callback: () => { new BookQuickOpen(this.app, this).open(); },
       },
+      {
+        id: "add-from-calibre", name: qiaomuReaderTranslate("add-from-calibre"),
+        checkCallback: (probe) => {
+          if (!Platform.isDesktopApp) return false;
+          if (!probe) this.openCalibrePicker();
+          return true;
+        },
+      },
+      {
+        id: "show-in-calibre", name: qiaomuReaderTranslate("show-in-calibre"),
+        checkCallback: (probe) => {
+          if (!Platform.isDesktopApp) return false;
+          const file = this.app.workspace.getActiveFile() || this.lastReadBookFile();
+          const rec = file && findCalibreImport(this.settings, file.path);
+          if (!rec) return false;
+          if (!probe) {
+            const libraryPath = detectCalibreLibraryPath(this.settings.calibreLibraryPath);
+            openCalibreShowBook(libraryPath, rec.id);
+          }
+          return true;
+        },
+      },
     ];
     for (const command of laterCommands) this.addCommand(command);
   }
@@ -1866,6 +1899,7 @@ const QiaomuBookReader = class extends Plugin {
     this.settings = { ...DEFAULT, ...(saved?.settings ?? {}) };
     this.settings.aiCliPaths = { ...(this.settings.aiCliPaths || {}) };
     this.settings.aiAcpPaths = { ...(this.settings.aiAcpPaths || {}) };
+    this.settings.calibreImports = { ...(this.settings.calibreImports || {}) };
     this.settings.aiModels = { ...(this.settings.aiModels || {}) };
     this.settings.aiThinking = { ...(this.settings.aiThinking || {}) };
     this.settings.aiCliEfforts = { ...(this.settings.aiCliEfforts || {}) };
@@ -2157,6 +2191,125 @@ const QiaomuBookReader = class extends Plugin {
     const current = this.app.vault.getAbstractFileByPath(bookPath);
     if (current) this.openFile(current);
     else new Notice(qiaomuReaderTranslate("book-not-found-0", bookPath));
+  }
+  openCalibrePicker(libraryView) {
+    if (!Platform.isDesktopApp) {
+      new Notice(qiaomuReaderTranslate("calibre-desktop-only"));
+      return;
+    }
+    new CalibreSearchModal(this.app, this, {
+      allowedFormats: BOOK_EXTENSIONS,
+      vaultBooks: () => this.bookFiles(),
+      addBooks: async (jobs) => {
+        await this.importCalibreBooks(jobs);
+        if (libraryView && typeof libraryView._refresh === "function") libraryView._refresh();
+        else {
+          for (const leaf of this.app.workspace.getLeavesOfType(LIB_VIEW_TYPE)) {
+            if (typeof leaf.view?._refresh === "function") leaf.view._refresh();
+          }
+        }
+      },
+    }).open();
+  }
+  booksTargetDir() {
+    const set = qiaomuReaderPath(this.settings.booksFolder || "");
+    if (set) return set;
+    const counts = new Map();
+    for (const f of this.app.vault.getFiles()) {
+      if (!BOOK_EXTENSIONS.has(f.extension)) continue;
+      const dir = f.parent && f.parent.path && f.parent.path !== "/" ? f.parent.path : "";
+      counts.set(dir, (counts.get(dir) || 0) + 1);
+    }
+    let best = "", bestN = -1;
+    for (const [dir, n] of counts) if (n > bestN) { best = dir; bestN = n; }
+    return best;
+  }
+  freeBookPath(dir, name) {
+    const clean = (name || "book").replace(/[\\/:*?"<>|\n\r\t]/g, "_").trim() || "book";
+    const dot = clean.lastIndexOf(".");
+    const base = dot > 0 ? clean.slice(0, dot) : clean;
+    const ext = dot > 0 ? clean.slice(dot) : "";
+    const join = (b) => qiaomuReaderPath((dir ? dir + "/" : "") + b + ext);
+    let p = join(base), i = 1;
+    while (this.app.vault.getAbstractFileByPath(p)) p = join(`${base} (${i++})`);
+    return p;
+  }
+  async importCalibreBooks(jobs) {
+    const rt = calibreRuntime();
+    if (!rt) throw new Error("desktop-only");
+    const dir = this.booksTargetDir();
+    if (dir && !this.app.vault.getAbstractFileByPath(dir)) {
+      await this.app.vault.createFolder(dir).catch(() => {});
+    }
+    if (!this.settings.calibreImports) this.settings.calibreImports = {};
+    let added = 0, linked = 0, skipped = 0;
+    for (const job of jobs || []) {
+      const book = job.book;
+      const state = job.state || {};
+      const format = job.format;
+      if (state.kind === "imported") { skipped += 1; continue; }
+      let vaultPath = state.path;
+      if (state.kind === "new") {
+        try {
+          const { bytes, size } = readLibraryFile(job.libraryPath, job.filePath);
+          vaultPath = this.freeBookPath(dir, calibreSafeFilename(book.title, format));
+          await this.app.vault.createBinary(vaultPath, bytes);
+          const written = await this.app.vault.adapter.readBinary(vaultPath);
+          if (!written || written.byteLength !== size) {
+            const broken = this.app.vault.getAbstractFileByPath(vaultPath);
+            if (broken) await this.app.vault.delete(broken);
+            throw new Error("calibre-write-mismatch");
+          }
+        } catch (error) {
+          console.warn("Qiaomu Reader: Calibre copy failed", error);
+          skipped += 1;
+          continue;
+        }
+        added += 1;
+        const coverUrl = readCoverDataUrl(calibreCoverPath(job.libraryPath, book));
+        if (coverUrl) this.thumbCache[vaultPath] = coverUrl;
+      } else if (state.kind === "vault") {
+        linked += 1;
+      } else {
+        skipped += 1;
+        continue;
+      }
+      this.settings.calibreImports[book.uuid || `id:${book.id}`] = {
+        id: book.id,
+        uuid: book.uuid || "",
+        path: vaultPath,
+        title: book.title || "",
+        format,
+        isbn: book.isbn || "",
+        addedAt: Date.now(),
+        lastModified: book.lastModified || "",
+      };
+      const file = this.app.vault.getAbstractFileByPath(vaultPath);
+      if (file instanceof TFile) {
+        let notePath = this.settings.bookNoteLinks && this.settings.bookNoteLinks[file.path];
+        if (!notePath && this.settings.autoBookNote) {
+          const folder = bookNotesFolderPath(this.app) || notesFolderPath(this.app) || "";
+          const note = await this.createBookNote(file, book.title || file.basename, folder);
+          notePath = note && note.path;
+        }
+        if (notePath) {
+          await writeBookProperty(this.app, notePath, file, {
+            calibre_uuid: book.uuid,
+            calibre_id: book.id,
+            isbn: book.isbn,
+            authors: book.authors,
+          });
+        }
+      }
+    }
+    await this._saveThumbCache();
+    await this.saveAll();
+    this.registerBookCommands();
+    const bits = [];
+    if (added) bits.push(qiaomuReaderTranslate("calibre-added-count", added));
+    if (linked) bits.push(qiaomuReaderTranslate("calibre-linked-count", linked));
+    if (skipped) bits.push(qiaomuReaderTranslate("calibre-skipped-count", skipped));
+    new Notice(bits.join(" · ") || qiaomuReaderTranslate("calibre-nothing-added"));
   }
   async ensureBookNote(file) {
     if (!file) return null;
@@ -8235,7 +8388,7 @@ function bookNoteFromFrontmatter(plugin, bookFile) {
   }
   return "";
 }
-async function writeBookProperty(app, noteName, bookFile) {
+async function writeBookProperty(app, noteName, bookFile, extras = {}) {
   try {
     if (!noteName || !bookFile) return;
     const note = resolveBookNote(app, noteName);
@@ -8244,6 +8397,10 @@ async function writeBookProperty(app, noteName, bookFile) {
       fm.book = `[[${bookFile.path}]]`;
       if (!fm.type) fm.type = "reading-note";
       fm["book-reader-note"] = true;
+      if (extras.calibre_uuid) fm.calibre_uuid = extras.calibre_uuid;
+      if (extras.calibre_id) fm.calibre_id = extras.calibre_id;
+      if (extras.isbn) fm.isbn = extras.isbn;
+      if (extras.authors) fm.authors = extras.authors;
     });
   } catch (e) {
     console.warn("Qiaomu Reader: could not write the book property into the note", e);
@@ -8500,10 +8657,11 @@ function addBookFileMenu(app, menu, file) {
   return menu;
 }
 // Path-keyed stores have to forget the removed book, otherwise stale progress,
-// backups, highlights and cover fits resurface if the path is ever reused.
+// backups, highlights and legacy cover preferences resurface if the path is ever reused.
 async function dropBookState(plugin, bookPath) {
-  const stores = [plugin.progress, plugin.progressBackups, plugin.highlights, plugin.settings && plugin.settings.coverFits];
+  const stores = [plugin.progress, plugin.progressBackups, plugin.highlights, plugin.settings?.coverFits];
   for (const store of stores) if (store) delete store[bookPath];
+  if (plugin.settings) forgetCalibreImportByPath(plugin.settings, bookPath);
   return plugin.saveAll();
 }
 function deleteBookFromVault(app, plugin, file, onDone) {
@@ -10752,13 +10910,23 @@ const LibraryModal = class extends Modal {
     hw.createDiv("qiaomu-reader-lib-title").setText(qiaomuReaderTranslate("library"));
 
     // Primary action: import book files into the library folder.
-    const add = headline.createDiv("qiaomu-reader-lib-add");
+    const actions = headline.createDiv("qiaomu-reader-lib-actions");
+    const add = actions.createDiv("qiaomu-reader-lib-add");
     const addText = qiaomuReaderTranslate("add-a-book");
     this._setAttrs(add, { role: "button", tabindex: "0" });
     add.setAttribute("aria-label", addText);
     svgIcon(add, "plus");
     add.createSpan({ cls: "qiaomu-reader-lib-add-label", text: addText });
     this._activateOnClick(add, () => this._pickBooks());
+    if (Platform.isDesktopApp) {
+      const calibre = actions.createDiv("qiaomu-reader-lib-add");
+      const calibreText = qiaomuReaderTranslate("add-from-calibre");
+      this._setAttrs(calibre, { role: "button", tabindex: "0" });
+      calibre.setAttribute("aria-label", calibreText);
+      svgIcon(calibre, "library");
+      calibre.createSpan({ cls: "qiaomu-reader-lib-add-label", text: calibreText });
+      this._activateOnClick(calibre, () => this.plugin.openCalibrePicker(this));
+    }
     return hdr;
   }
   _buildLibTools(hdr) {
@@ -10792,6 +10960,13 @@ const LibraryModal = class extends Modal {
     svgIcon(add, "plus");
     add.createSpan({ text: qiaomuReaderTranslate("add-a-book") });
     this._activateOnClick(add, () => this._pickBooks());
+    if (Platform.isDesktopApp) {
+      const calibre = box.createDiv("qiaomu-reader-lib-empty-add");
+      this._setAttrs(calibre, { role: "button", tabindex: "0" });
+      svgIcon(calibre, "library");
+      calibre.createSpan({ text: qiaomuReaderTranslate("add-from-calibre") });
+      this._activateOnClick(calibre, () => this.plugin.openCalibrePicker(this));
+    }
     const samples = box.createEl("button", { text: qiaomuReaderTranslate("add-starter-books") });
     samples.addEventListener("click", async () => {
       samples.disabled = true;
@@ -10984,6 +11159,13 @@ const LibraryModal = class extends Modal {
     return (ev) => {
       ev.preventDefault(); ev.stopPropagation();
       const menu = addBookFileMenu(this.app, new Menu(), file);
+      const rec = findCalibreImport(this.plugin.settings, file.path);
+      if (rec && Platform.isDesktopApp) {
+        menu.addItem((it) => it.setTitle(qiaomuReaderTranslate("show-in-calibre")).setIcon("book").onClick(() => {
+          const libraryPath = detectCalibreLibraryPath(this.plugin.settings.calibreLibraryPath);
+          openCalibreShowBook(libraryPath, rec.id);
+        }));
+      }
       menu.addSeparator(); removeItem(menu);
       menu.showAtMouseEvent(ev);
     };
@@ -10996,9 +11178,6 @@ const LibraryModal = class extends Modal {
     this._setAttrs(card, { role: "group", tabindex: "0" });
     card.setAttribute("aria-label", qiaomuReaderTranslate("open-book-0", file.basename));
     const cover = card.createDiv("qiaomu-reader-lib-cover");
-    const settings = this.plugin.settings;
-    const fits = settings.coverFits ?? (settings.coverFits = {});
-    if (fits[bookPath] === "fill") cover.addClass("qiaomu-reader-fit-fill");
     const ph = cover.createDiv("qiaomu-reader-lib-ph");
     const [paper, ink] = coverPalette(file.basename);
     ph.style.setProperty("--qbr-cover-paper", paper);
@@ -11006,24 +11185,6 @@ const LibraryModal = class extends Modal {
     ph.createDiv("qiaomu-reader-lib-ph-ext").setText(file.extension.toUpperCase());
     ph.createDiv("qiaomu-reader-lib-ph-title").setText(file.basename);
     void this.loadThumb(file, cover, ph);
-    const fitBtn = cover.createEl("button", { cls: "qiaomu-reader-lib-fitbtn", attr: { type: "button" } });
-    fitBtn.setAttribute("aria-label", qiaomuReaderTranslate("cover-fit"));
-    const refreshFitView = () => {
-      const fill = cover.hasClass("qiaomu-reader-fit-fill");
-      const [mode, glyph] = fill ? ["cover", "cover-fit"] : ["contain", "cover-fill"];
-      cover.style.setProperty("background-size", mode, "important");
-      svgIcon(fitBtn, glyph);
-    };
-    refreshFitView();
-    fitBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      const nowFill = !cover.hasClass("qiaomu-reader-fit-fill");
-      cover.toggleClass("qiaomu-reader-fit-fill", nowFill);
-      if (nowFill) fits[bookPath] = "fill";
-      else delete fits[bookPath];
-      refreshFitView();
-      void this.plugin.saveAll();
-    });
     const showStrip = pct > 0;
     if (showStrip) {
       const strip = cover.createDiv("qiaomu-reader-lib-strip");
@@ -11144,7 +11305,7 @@ const LibraryModal = class extends Modal {
     ph.addClass("qiaomu-reader-hidden");
     coverEl.style.setProperty("background-image", `url("${src.replace(/"/g, '\\"')}")`, "important");
     coverEl.addClass("qiaomu-reader-cover-img");
-    coverEl.style.setProperty("background-size", coverEl.hasClass("qiaomu-reader-fit-fill") ? "cover" : "contain", "important");
+    coverEl.style.setProperty("background-size", "cover", "important");
     coverEl.addClass("qiaomu-reader-has-cover");
     return true;
   }
@@ -13262,6 +13423,34 @@ const SettingsTab = class extends PluginSettingTab {
       placeholder: "0. Files/3. PDF-files",
       commit: (v) => persistViaDisk("booksFolder", v),
     });
+    if (Platform.isDesktopApp) {
+      const found = detectCalibreLibraryPath(settings.calibreLibraryPath);
+      new Setting(c)
+        .setName(tx("calibre-library-path"))
+        .setDesc(found ? tx("calibre-library-using", found) : tx("calibre-library-missing"))
+        .addText((text) => {
+          text.setPlaceholder("~/calibre");
+          text.setValue(settings.calibreLibraryPath || found || "");
+          text.onChange((v) => persistViaDisk("calibreLibraryPath", v));
+        })
+        .addButton((button) => button.setButtonText(tx("calibre-detect")).onClick(async () => {
+          const detected = detectCalibreLibraryPath("");
+          if (!detected) {
+            new Notice(tx("calibre-library-missing"));
+            return;
+          }
+          await persistViaDisk("calibreLibraryPath", detected);
+          this._redraw();
+        }));
+      new Setting(c)
+        .setName(tx("calibre-calibredb-path"))
+        .setDesc(tx("calibre-calibredb-desc"))
+        .addText((text) => {
+          text.setPlaceholder(detectCalibredbPath(settings.calibreCalibredbPath) || "calibredb");
+          text.setValue(settings.calibreCalibredbPath || "");
+          text.onChange((v) => persistViaDisk("calibreCalibredbPath", v));
+        });
+    }
     const dataRoot = c;
     c = this._settingsDisclosure(dataRoot, "ai-storage-sync-options");
     addFolderPathControl(new Setting(c)
