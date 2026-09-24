@@ -30,7 +30,7 @@ function setup() {
   const Library = vm.runInNewContext(`${code}; LibraryModal`, { Modal: class { close() {} }, window,
     qiaomuReaderTranslate: (key, n) => n === undefined ? key : `${key}:${n}`, svgIcon() {},
     bookNoteLinkFor: () => "linked", resolveBookNote: () => ({}), openOrCreateBookNoteBeside: async () => { notes++; },
-    Notice: class {}, Date, qiaomuReaderPath: value => value, coverPalette,
+    Notice: class {}, Date, qiaomuReaderPath: value => value, coverPalette, docOf: () => document,
   });
   const library = new Library({}, plugin);
   library.loadThumb = async () => {};
@@ -59,6 +59,18 @@ test("card keyboard activation opens once and menu activation stays local", () =
   x.host.querySelector(".qiaomu-reader-lib-card").dispatchEvent(new x.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   x.host.querySelector(".qiaomu-reader-lib-morebtn").click();
   assert.deepEqual(x.stats(), { reads: 1, notes: 0, menus: 1, panels: 0 });
+});
+
+test("library covers fill the card and offer only the book menu", async () => {
+  const x = setup();
+  x.library.plugin.settings.coverFits = { [x.file.path]: "contain" }; // old saved preference
+  const cover = x.host.querySelector(".qiaomu-reader-lib-cover");
+  assert.equal(cover.querySelectorAll("button").length, 1);
+  assert.equal(cover.querySelector("button").className, "qiaomu-reader-lib-morebtn");
+  x.window.HTMLImageElement.prototype.decode = async () => {};
+  const shown = await x.library.showImg(cover, cover.querySelector(".qiaomu-reader-lib-ph"), "data:image/png;base64,cover");
+  assert.equal(shown, true);
+  assert.equal(cover.style.getPropertyValue("background-size"), "cover");
 });
 
 test("reopening highlights from library preserves an already open panel", async () => {

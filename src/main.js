@@ -101,7 +101,7 @@ const DEFAULT_TRANSLATION = {
   translateEnabled: false, translateTo: "zh-CN",
 };
 const DEFAULT_LIBRARY_UI = {
-  bookNoteLinks: {}, locationMarks: [], bookNotePrompted: {}, coverFits: {},
+  bookNoteLinks: {}, locationMarks: [], bookNotePrompted: {},
   syncMode: "auto", libCategory: "all",
 };
 const DEFAULT_READER_SESSION = {
@@ -561,8 +561,6 @@ function icon(n) {
     "more": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>`,
     "search": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
     "qiaomu-library": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.2c3.2-.8 5.9-.2 8.5 1.7v12.2c-2.6-1.9-5.3-2.5-8.5-1.7z"/><path d="M20.5 5.2c-3.2-.8-5.9-.2-8.5 1.7v12.2c2.6-1.9 5.3-2.5 8.5-1.7z"/><path d="M6.5 9.1c1.1 0 2.1.2 3 .7"/><path d="M17.5 9.1c-1.1 0-2.1.2-3 .7"/></svg>`,
-    "cover-fit": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`,
-    "cover-fill": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`,
     "bookmark": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`,
     "copy": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
     "translate": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h7M9 3v2c0 4.4-2.2 7-5 8"/><path d="M5 9c0 2.5 2.5 4.5 6 6"/><path d="M12.5 20l4.2-9.5L21 20M14.3 16.2h4.8"/></svg>`,
@@ -8659,9 +8657,9 @@ function addBookFileMenu(app, menu, file) {
   return menu;
 }
 // Path-keyed stores have to forget the removed book, otherwise stale progress,
-// backups, highlights and cover fits resurface if the path is ever reused.
+// backups, highlights and legacy cover preferences resurface if the path is ever reused.
 async function dropBookState(plugin, bookPath) {
-  const stores = [plugin.progress, plugin.progressBackups, plugin.highlights, plugin.settings && plugin.settings.coverFits];
+  const stores = [plugin.progress, plugin.progressBackups, plugin.highlights, plugin.settings?.coverFits];
   for (const store of stores) if (store) delete store[bookPath];
   if (plugin.settings) forgetCalibreImportByPath(plugin.settings, bookPath);
   return plugin.saveAll();
@@ -10921,7 +10919,7 @@ const LibraryModal = class extends Modal {
     add.createSpan({ cls: "qiaomu-reader-lib-add-label", text: addText });
     this._activateOnClick(add, () => this._pickBooks());
     if (Platform.isDesktopApp) {
-      const calibre = actions.createDiv("qiaomu-reader-lib-add qiaomu-reader-lib-add-calibre");
+      const calibre = actions.createDiv("qiaomu-reader-lib-add");
       const calibreText = qiaomuReaderTranslate("add-from-calibre");
       this._setAttrs(calibre, { role: "button", tabindex: "0" });
       calibre.setAttribute("aria-label", calibreText);
@@ -11180,9 +11178,6 @@ const LibraryModal = class extends Modal {
     this._setAttrs(card, { role: "group", tabindex: "0" });
     card.setAttribute("aria-label", qiaomuReaderTranslate("open-book-0", file.basename));
     const cover = card.createDiv("qiaomu-reader-lib-cover");
-    const settings = this.plugin.settings;
-    const fits = settings.coverFits ?? (settings.coverFits = {});
-    if (fits[bookPath] === "fill") cover.addClass("qiaomu-reader-fit-fill");
     const ph = cover.createDiv("qiaomu-reader-lib-ph");
     const [paper, ink] = coverPalette(file.basename);
     ph.style.setProperty("--qbr-cover-paper", paper);
@@ -11190,24 +11185,6 @@ const LibraryModal = class extends Modal {
     ph.createDiv("qiaomu-reader-lib-ph-ext").setText(file.extension.toUpperCase());
     ph.createDiv("qiaomu-reader-lib-ph-title").setText(file.basename);
     void this.loadThumb(file, cover, ph);
-    const fitBtn = cover.createEl("button", { cls: "qiaomu-reader-lib-fitbtn", attr: { type: "button" } });
-    fitBtn.setAttribute("aria-label", qiaomuReaderTranslate("cover-fit"));
-    const refreshFitView = () => {
-      const fill = cover.hasClass("qiaomu-reader-fit-fill");
-      const [mode, glyph] = fill ? ["cover", "cover-fit"] : ["contain", "cover-fill"];
-      cover.style.setProperty("background-size", mode, "important");
-      svgIcon(fitBtn, glyph);
-    };
-    refreshFitView();
-    fitBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      const nowFill = !cover.hasClass("qiaomu-reader-fit-fill");
-      cover.toggleClass("qiaomu-reader-fit-fill", nowFill);
-      if (nowFill) fits[bookPath] = "fill";
-      else delete fits[bookPath];
-      refreshFitView();
-      void this.plugin.saveAll();
-    });
     const showStrip = pct > 0;
     if (showStrip) {
       const strip = cover.createDiv("qiaomu-reader-lib-strip");
@@ -11328,7 +11305,7 @@ const LibraryModal = class extends Modal {
     ph.addClass("qiaomu-reader-hidden");
     coverEl.style.setProperty("background-image", `url("${src.replace(/"/g, '\\"')}")`, "important");
     coverEl.addClass("qiaomu-reader-cover-img");
-    coverEl.style.setProperty("background-size", coverEl.hasClass("qiaomu-reader-fit-fill") ? "cover" : "contain", "important");
+    coverEl.style.setProperty("background-size", "cover", "important");
     coverEl.addClass("qiaomu-reader-has-cover");
     return true;
   }
