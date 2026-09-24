@@ -1,1 +1,1 @@
-RESTORE_VIA_MAIN_SHA_PROBE
+@file:///workspace/qiaomu-reader/src/i18n-en.js
