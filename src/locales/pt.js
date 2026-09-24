@@ -1333,4 +1333,7 @@ export default {
   "calibre-linked-count": "Vinculados: {0}",
   "calibre-skipped-count": "Ignorados: {0}",
   "calibre-nothing-added": "Nada foi adicionado.",
+  "vim-style-shortcuts": "Atalhos estilo Vim",
+  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "Quando ativo: j/k rolam ou viram páginas, h/l capítulos, gg/G início/fim, o sumário, n destaques, / busca, Esc fecha painéis. Só com o leitor em foco.",
+  "highlight-selection": "Destacar seleção",
 };

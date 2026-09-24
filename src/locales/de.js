@@ -1333,4 +1333,7 @@ export default {
   "calibre-linked-count": "{0} verknüpft",
   "calibre-skipped-count": "{0} übersprungen",
   "calibre-nothing-added": "Nichts hinzugefügt.",
+  "vim-style-shortcuts": "Vim-Tastenkürzel",
+  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "Wenn aktiv: j/k scrollen oder umblättern, h/l Kapitel, gg/G Anfang/Ende, o Inhaltsverzeichnis, n Markierungen, / Suche, Esc schließt Panels. Nur bei Fokus im Leser.",
+  "highlight-selection": "Auswahl markieren",
 };

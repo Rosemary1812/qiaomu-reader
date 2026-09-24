@@ -1333,4 +1333,7 @@ export default {
   "calibre-linked-count": "Liés : {0}",
   "calibre-skipped-count": "Ignorés : {0}",
   "calibre-nothing-added": "Rien n’a été ajouté.",
+  "vim-style-shortcuts": "Raccourcis style Vim",
+  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "Si activé : j/k défilent ou tournent les pages, h/l chapitres, gg/G début/fin, o table des matières, n surlignages, / recherche, Esc ferme les panneaux. Uniquement quand le lecteur a le focus.",
+  "highlight-selection": "Surligner la sélection",
 };

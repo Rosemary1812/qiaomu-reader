@@ -1333,4 +1333,7 @@ export default {
   "calibre-linked-count": "{0} 冊を関連付けました",
   "calibre-skipped-count": "{0} 冊をスキップしました",
   "calibre-nothing-added": "追加された本はありません。",
+  "vim-style-shortcuts": "Vim風ショートカット",
+  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "オン時：j/k でスクロールまたはページ送り、h/l で章移動、gg/G で先頭/末尾、o で目次、n でハイライト、/ で検索、Esc でパネルを閉じます。リーダーにフォーカスがあるときのみ有効です。",
+  "highlight-selection": "選択をハイライト",
 };

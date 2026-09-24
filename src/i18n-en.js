@@ -1334,4 +1334,7 @@ export const QIAOMU_READER_EN = {
   "calibre-linked-count": "Linked {0}",
   "calibre-skipped-count": "Skipped {0}",
   "calibre-nothing-added": "Nothing was added.",
+  "vim-style-shortcuts": "Vim-style shortcuts",
+  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "When on: j/k scroll or turn pages, h/l chapters, gg/G start/end, o TOC, n highlights, / search, Esc closes panels. Only while the reader is focused.",
+  "highlight-selection": "Highlight selection",
 };

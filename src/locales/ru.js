@@ -1335,4 +1335,7 @@ export default {
   "calibre-linked-count": "Связано: {0}",
   "calibre-skipped-count": "Пропущено: {0}",
   "calibre-nothing-added": "Ничего не добавлено.",
+  "vim-style-shortcuts": "Vim-подобные сочетания",
+  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "Если включено: j/k — прокрутка или листание, h/l — главы, gg/G — начало/конец, o — оглавление, n — выделения, / — поиск, Esc — закрыть панели. Только когда фокус на читалке.",
+  "highlight-selection": "Выделить фрагмент",
 };

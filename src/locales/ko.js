@@ -1333,4 +1333,7 @@ export default {
   "calibre-linked-count": "{0}권 연결됨",
   "calibre-skipped-count": "{0}권 건너뜀",
   "calibre-nothing-added": "추가된 책이 없습니다.",
+  "vim-style-shortcuts": "Vim 스타일 단축키",
+  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "켜면: j/k로 스크롤 또는 페이지 넘김, h/l로 챕터, gg/G로 처음/끝, o로 목차, n으로 하이라이트, /로 검색, Esc로 패널 닫기. 리더에 포커스가 있을 때만 동작합니다.",
+  "highlight-selection": "선택 하이라이트",
 };
