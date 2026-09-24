@@ -22,6 +22,7 @@ import { makeBook } from "foliate-js/view.js";
 import { Overlayer } from "foliate-js/overlayer.js";
 import { searchMatcher } from "foliate-js/search.js";
 import { textWalker } from "foliate-js/text-walker.js";
+import "./continuous-epub.js";
 
 // Every extension this engine can open; the plugin registers all of them.
 export const ENGINE_EXTENSIONS = ["epub", "fb2", "fbz", "mobi", "azw", "azw3", "cbz"];
@@ -33,6 +34,10 @@ export const SEARCH_PREFIX = "foliate-search:";
 // The production build scopes the library's registrations and this tag
 // together. Direct module tests retain the upstream tag.
 const VIEW_TAG = typeof __QBR_ENGINE_VIEW_TAG__ === "string" ? __QBR_ENGINE_VIEW_TAG__ : "foliate-view";
+
+function continuousEpubRequested(fileName, settings) {
+    return settings.readMode === "scroll" && /\.epub$/i.test(fileName || "");
+}
 
 export function engineLayout(settings = {}, width = 0) {
     const columns = settings.columns === "1" || width <= 700 ? 1 : 2;
@@ -105,7 +110,9 @@ export class EpubEngine {
     #layout = {};
     #resizeObserver = null;
     #resizeFrame = null;
-    #keyCleanup = null;
+    #keyCleanups = new Map();
+    #source = null;
+    #modeSwitch = null;
 
     constructor(container, hooks = {}) {
         this.#host = container;
@@ -119,9 +126,11 @@ export class EpubEngine {
     async open(bytes, fileName, opts = {}) {
         // Reusing an adapter must release its previous parser and observers.
         this.destroy();
+        this.#source = /\.epub$/i.test(fileName || "") ? { bytes, fileName } : null;
         // Format is sniffed from the bytes by the library, not from the name.
         const file = new File([bytes], fileName);
         const view = document.createElement(VIEW_TAG);
+        view.toggleAttribute("continuous", continuousEpubRequested(fileName, this.#layout));
         this.#view = view;
         this.#host.replaceChildren(view);
         view.addEventListener("relocate", (e) => {
@@ -137,13 +146,25 @@ export class EpubEngine {
             if (this.#view !== view) return;
             const { doc, index } = e.detail || {};
             if (!doc) return;
-            this.#keyCleanup?.();
-            this.#keyCleanup = bindEngineKeys(doc, (direction) => {
+            if (!view.hasAttribute("continuous")) {
+                for (const cleanup of this.#keyCleanups.values()) cleanup();
+                this.#keyCleanups.clear();
+            }
+            const cleanup = bindEngineKeys(doc, (direction) => {
                 if (this.#hooks.onNavigate) this.#hooks.onNavigate(direction);
                 else void this[direction]().catch(error => console.warn("Qiaomu Reader: page turn failed", error));
             }, () => this.#layout.readMode === "scroll");
+            this.#keyCleanups.set(doc, cleanup);
             if (this.#extraCss) this.#injectCss(doc, this.#extraCss);
             this.#hooks.onDocLoaded?.({ doc, index });
+            // The renderer creates the overlayer immediately after `load`.
+            // Repaint saved annotations once that section can receive them.
+            queueMicrotask(() => { if (this.#view === view) void this.#repaintSection(index); });
+        });
+        view.addEventListener("unload", (e) => {
+            const doc = e.detail?.doc;
+            this.#keyCleanups.get(doc)?.();
+            this.#keyCleanups.delete(doc);
         });
         view.addEventListener("draw-annotation", (e) => {
             const { draw, annotation } = e.detail;
@@ -171,6 +192,7 @@ export class EpubEngine {
             throw error;
         }
         this.#book = view.book;
+        if (view.isFixedLayout) this.#source = null;
         this.setLayout(this.#layout);
         view.renderer?.setStyles?.(this.#extraCss);
         const Resize = this.#host.ownerDocument.defaultView?.ResizeObserver;
@@ -202,10 +224,12 @@ export class EpubEngine {
         this.#resizeObserver?.disconnect(); this.#resizeObserver = null;
         this.#host.ownerDocument.defaultView?.cancelAnimationFrame?.(this.#resizeFrame);
         this.#resizeFrame = null;
-        this.#keyCleanup?.(); this.#keyCleanup = null;
+        for (const cleanup of this.#keyCleanups.values()) cleanup();
+        this.#keyCleanups.clear();
         const view = this.#view;
         this.#view = null;
         this.#book = null;
+        this.#source = null;
         this.#highlights.clear();
         this.#idByCfi.clear();
         this.#searchHits = [];
@@ -219,13 +243,16 @@ export class EpubEngine {
     // document, which iframes cannot see) and reader-scoped overrides.
     setExtraCss(css) {
         this.#extraCss = String(css || "");
+        const renderer = this.#view?.renderer;
+        const anchor = renderer?.captureAnchor?.();
         for (const { doc } of this.contents()) {
             doc.querySelectorAll?.('style[data-qbr-engine]')?.forEach?.((el) => el.remove());
             if (this.#extraCss) this.#injectCss(doc, this.#extraCss);
         }
         // Foliate paints the page margins in a separate background layer.
         // Its style API refreshes that layer as well as the section document.
-        this.#view?.renderer?.setStyles?.(this.#extraCss);
+        renderer?.setStyles?.(this.#extraCss);
+        renderer?.restoreAnchor?.(anchor);
     }
 
     #injectCss(doc, css) {
@@ -284,8 +311,34 @@ export class EpubEngine {
         const renderer = this.#view?.renderer;
         const width = this.#host.clientWidth;
         if (!renderer || this.#view.isFixedLayout || !width || !this.#host.clientHeight) return;
-        for (const [name, value] of Object.entries(engineLayout(this.#layout, width))) {
+        const desired = continuousEpubRequested(this.#source?.fileName, this.#layout);
+        if (this.#view.hasAttribute("continuous") !== desired) {
+            if (this.#modeSwitch) return this.#modeSwitch;
+            this.#modeSwitch = this.#switchMode().finally(() => { this.#modeSwitch = null; });
+            return this.#modeSwitch;
+        }
+        const layout = engineLayout(this.#layout, width);
+        if (desired) layout["max-inline-size"] = `${Math.min(720, width)}px`;
+        for (const [name, value] of Object.entries(layout)) {
             if (renderer.getAttribute(name) !== value) renderer.setAttribute(name, value);
+        }
+    }
+
+    async #switchMode() {
+        while (this.#view && this.#source
+            && this.#view.hasAttribute("continuous") !== continuousEpubRequested(this.#source.fileName, this.#layout)) {
+            const source = this.#source;
+            const location = this.currentLocation();
+            const highlights = [...this.#highlights.values()];
+            const searchHits = [...this.#searchHits];
+            await this.open(source.bytes, source.fileName, {
+                initialCfi: location?.cfi, initialFraction: location?.fraction,
+            });
+            for (const { id, value, colorId } of highlights)
+                await this.addHighlight(id, value, colorId);
+            this.#searchHits = searchHits;
+            for (const cfi of searchHits)
+                await this.#view?.addAnnotation({ value: SEARCH_PREFIX + cfi });
         }
     }
 
@@ -307,6 +360,23 @@ export class EpubEngine {
         this.#highlights.set(id, annotation);
         this.#idByCfi.set(cfiRange, id);
         await this.#view.addAnnotation(annotation);
+    }
+
+    async #repaintSection(index) {
+        const view = this.#view;
+        if (!view) return;
+        for (const annotation of this.#highlights.values()) {
+            let destination;
+            try { destination = view.resolveNavigation(annotation.value); } catch { continue; }
+            if (destination?.index === index) try { await view.addAnnotation(annotation); }
+            catch { /* an outdated CFI cannot paint in this edition */ }
+        }
+        for (const cfi of this.#searchHits) {
+            let destination;
+            try { destination = view.resolveNavigation(cfi); } catch { continue; }
+            if (destination?.index === index) try { await view.addAnnotation({ value: SEARCH_PREFIX + cfi }); }
+            catch { /* stale search range */ }
+        }
     }
 
     async removeHighlight(id) {

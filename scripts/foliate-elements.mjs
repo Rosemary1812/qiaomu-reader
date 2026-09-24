@@ -45,6 +45,14 @@ export function patchFoliatePaginator(code) {
   return code;
 }
 
+export function patchFoliateView(code) {
+  // Foliate keeps parsing, CFI, link and annotation handling. Only its
+  // reflowable renderer changes when the reader requests continuous EPUB flow.
+  return replaceRequired(code,
+    "this.renderer = document.createElement('foliate-paginator')",
+    "this.renderer = document.createElement(this.hasAttribute('continuous') ? __QBR_CONTINUOUS_TAG__ : 'foliate-paginator')");
+}
+
 // Custom elements survive plugin unload. Scope them to this plugin and its
 // locked dependency build, so reloads reuse compatible classes and upgrades
 // cannot accidentally instantiate an older library's renderer.
@@ -53,13 +61,17 @@ export function foliateElements(root = process.cwd()) {
     .update(fs.readFileSync(fileURLToPath(import.meta.url))).digest("hex").slice(0, 12);
   const prefix = `qbr-${revision}-foliate`;
   return {
-    define: { __QBR_ENGINE_VIEW_TAG__: JSON.stringify(`${prefix}-view`) },
+    define: {
+      __QBR_ENGINE_VIEW_TAG__: JSON.stringify(`${prefix}-view`),
+      __QBR_CONTINUOUS_TAG__: JSON.stringify(`${prefix}-continuous`),
+    },
     plugin: {
       name: "qbr-foliate-elements",
       setup(build) {
         build.onLoad({ filter: /node_modules[\\/]foliate-js[\\/](view|paginator|fixed-layout)\.js$/ }, async ({ path: file }) => {
           let code = await fs.promises.readFile(file, "utf8");
           if (path.basename(file) === "paginator.js") code = patchFoliatePaginator(code);
+          if (path.basename(file) === "view.js") code = patchFoliateView(code);
           code = code.replace(/(['"])foliate-(view|paginator|fxl)\1/g, (_, quote, type) => `${quote}${prefix}-${type}${quote}`);
           code = code.replace(/customElements\.define\(('([^']+)'|"([^"]+)"),/g,
             (_, literal) => `if (!customElements.get(${literal})) customElements.define(${literal},`);

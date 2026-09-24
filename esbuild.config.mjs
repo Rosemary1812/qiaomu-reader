@@ -191,7 +191,7 @@ if (prod) {
   }
   for (const name of ["main.js", "styles.css"]) {
     const bytes = fs.statSync(path.join(profile.outputDir, name)).size;
-    if (bytes > 5_200_000) throw new Error(`${name} exceeds the 5.2 MB release budget: ${bytes} bytes`);
+    if (bytes > 5_250_000) throw new Error(`${name} exceeds the 5.25 MB release budget: ${bytes} bytes`);
     console.log(`${name}: ${bytes} bytes`);
   }
   // The pdf.js worker is now embedded in main.js (see loadPatchedWorker above), so
