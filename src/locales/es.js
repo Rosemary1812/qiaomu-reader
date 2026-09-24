@@ -1299,4 +1299,7 @@ export default {
   "translation-enable-daily": "Activar notas diarias…",
   "translation-saved": "Guardado en {0}",
   "translation-save-failed": "No se pudo guardar. Revisa la nota de destino e inténtalo de nuevo.",
+  "vim-style-shortcuts": "Atajos estilo Vim",
+  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "Si está activo: j/k desplazan o pasan página, h/l capítulos, gg/G inicio/fin, o índice, n resaltados, / buscar, Esc cierra paneles. Solo con el lector enfocado.",
+  "highlight-selection": "Resaltar selección",
 };

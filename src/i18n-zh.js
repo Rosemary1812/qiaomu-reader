@@ -1745,4 +1745,7 @@ Object.assign(QIAOMU_READER_ZH_CN, {
   "cjk-serif": "宋体",
   "kaiti": "楷体",
   "this-format-can-currently-only-be-read-on-desktop": "该格式目前仅支持在桌面端阅读。",
+  "vim-style-shortcuts": "Vim 风格快捷键",
+  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "开启后：j/k 滚动或翻页，h/l 切换章节，gg/G 到开头/结尾，o 目录，n 划线，/ 搜索，Esc 关闭面板。仅在阅读界面聚焦时生效。",
+  "highlight-selection": "高亮选中文字",
 });
