@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import test from "node:test";
+import { BUNDLED_FONT_FAMILIES } from "../src/bundled-fonts.js";
+import { OPENDYSLEXIC_READER_FONT } from "../src/opendyslexic-reader-font.js";
 
 test("reader font registry includes bundled OpenDyslexic", () => {
-  const source = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-  assert.match(source, /BUNDLED_FONT_FAMILIES\.opendyslexic/);
-  assert.match(source, /id: "opendyslexic"/);
-  assert.match(source, /labels: \{ ru: "OpenDyslexic", en: "OpenDyslexic", zh: "OpenDyslexic" \}/);
+  assert.equal(BUNDLED_FONT_FAMILIES.opendyslexic, "QBR OpenDyslexic");
+  assert.equal(OPENDYSLEXIC_READER_FONT.id, "opendyslexic");
+  assert.match(OPENDYSLEXIC_READER_FONT.stack, /OpenDyslexic/);
+  assert.deepEqual(OPENDYSLEXIC_READER_FONT.labels, {
+    ru: "OpenDyslexic",
+    en: "OpenDyslexic",
+    zh: "OpenDyslexic",
+  });
 });
