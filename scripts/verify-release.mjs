@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { buildProfile } from "./build-profile.mjs";
 
@@ -70,6 +71,10 @@ requireCheck(mainSource.includes(fs.readFileSync(path.join(root, "licenses/elton
 requireCheck(mainSource.includes("SIL OPEN FONT LICENSE Version 1.1"), "main.js is missing the bundled font license pointer");
 requireCheck(cssSource.includes(fs.readFileSync(path.join(root, "fonts/OFL.txt"), "utf8")), "styles.css is missing the bundled font license");
 requireCheck(cssSource.includes(fs.readFileSync(path.join(root, "fonts/README.md"), "utf8")), "styles.css is missing the bundled font provenance");
+const dictionaryLicenseComment = fs.readFileSync(path.join(root, "licenses/freedict-eng-zho-CC-BY-SA-3.0.txt"), "utf8").split("\n").map(line => line ? ` * ${line}` : " *").join("\n");
+requireCheck(cssSource.includes(dictionaryLicenseComment), "styles.css is missing the offline dictionary license");
+const dictionaryPayload = zlib.gzipSync(fs.readFileSync(path.join(root, "src/english-dictionary.json")), { level: 9 }).toString("base64");
+requireCheck(cssSource.includes(dictionaryPayload), "styles.css dictionary payload differs from source");
 
 if (installDir) {
   const installedManifest = readJson(path.join(installDir, "manifest.json"));

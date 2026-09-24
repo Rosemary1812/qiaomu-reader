@@ -1522,3 +1522,5 @@ button.qiaomu-reader-find-item.qiaomu-reader-toc-active { background: var(--back
 .qiaomu-reader-english-card-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; font-weight:650; }
 .qiaomu-reader-english-card-heading button { border:0; background:transparent; color:var(--text-muted); font-size:20px; cursor:pointer; padding:0 3px; }
 .qiaomu-reader-english-card-body { margin-top:6px; white-space:pre-wrap; max-height:160px; overflow:auto; }
+.qiaomu-reader-english-context-button { margin-top:8px; padding:4px 8px; border:1px solid var(--background-modifier-border); border-radius:6px; background:var(--background-secondary); color:var(--text-normal); cursor:pointer; }
+.qiaomu-reader-english-context-button:focus-visible { outline:2px solid var(--interactive-accent); outline-offset:2px; }

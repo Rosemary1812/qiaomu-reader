@@ -2,6 +2,7 @@ import esbuild from "esbuild";
 import process from "process";
 import fs from "fs";
 import path from "path";
+import zlib from "zlib";
 import { buildProfile } from "./scripts/build-profile.mjs";
 import { foliateElements } from "./scripts/foliate-elements.mjs";
 
@@ -175,9 +176,12 @@ if (prod) {
   const result = await ctx.rebuild();
   const fontData = fs.readFileSync("fonts/QiaomuReadingFangsong.woff2").toString("base64");
   const cefrData = fs.readFileSync("src/english-cefr.json").toString("base64");
+  const dictionaryData = zlib.gzipSync(fs.readFileSync("src/english-dictionary.json"), { level: 9 }).toString("base64");
   const css = fs.readFileSync("src/styles.css", "utf8") + `\n/* BUNDLED FONT PROVENANCE\n${fontProvenance}\nBUNDLED FONT LICENSE — SIL OFL 1.1\n${fontLicense}\n*/\n@font-face { font-family: 'QBR Zhuque Fangsong'; src: url('data:font/woff2;base64,${fontData}') format('woff2'); font-style: normal; font-weight: 400; font-display: swap; }\n`;
   const wordDataLicense = fs.readFileSync("licenses/words-cefr-MIT.txt", "utf8");
-  const wordDataCss = `\n/* Offline CEFR levels: https://github.com/bonkey/words-cefr-dataset\n${wordDataLicense}\n*/\n:root{--qiaomu-cefr-data:"${cefrData}"}\n`;
+  const dictionaryLicense = fs.readFileSync("licenses/freedict-eng-zho-CC-BY-SA-3.0.txt", "utf8");
+  const dictionaryLicenseComment = dictionaryLicense.split("\n").map(line => line ? ` * ${line}` : " *").join("\n");
+  const wordDataCss = `\n/* Offline CEFR levels: https://github.com/bonkey/words-cefr-dataset\n${wordDataLicense}\n*/\n/* English–Chinese dictionary: FreeDict+WikDict eng-zho 2025.11.23, derived from Wiktionary via DBnary. Adapted into simplified, shortened entries under CC BY-SA 3.0: https://freedict.org/downloads/\n${dictionaryLicenseComment}\n*/\n:root{--qiaomu-cefr-data:"${cefrData}";--qiaomu-dictionary-data:"${dictionaryData}"}\n`;
   fs.writeFileSync(path.join(profile.outputDir, "styles.css"), css + wordDataCss);
   if (profile.name === "community") {
     fs.copyFileSync("manifest.json", path.join(profile.outputDir, "manifest.json"));
