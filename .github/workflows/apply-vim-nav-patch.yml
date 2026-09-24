@@ -1,0 +1,39 @@
+name: Apply Vim nav remaining patch
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "vim-nav-remaining.patch"
+      - ".github/workflows/apply-vim-nav-patch.yml"
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/vim-nav-keys
+          fetch-depth: 0
+      - name: Restore bases from main, apply patch, cleanup junk
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout origin/main -- src/i18n-en.js src/i18n-zh.js src/locales src/main.js
+          git apply --verbose vim-nav-remaining.patch
+          rm -f src/_b64_test.js src/_url_test.js src/_size_test_50k.js src/i18n-en.js.test-uri || true
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+            exit 0
+          fi
+          git commit -m "$(cat <<'EOF'
+Add Vim nav i18n strings and wire reader navigation
+
+Restore real file contents (overwrite placeholder), add Vim-style
+i18n strings across locales, and wire vimNavKeys + highlight-selection.
+EOF
+)"
+          git push origin HEAD:feat/vim-nav-keys
