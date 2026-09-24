@@ -88,3 +88,21 @@
 +  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "Если включено: j/k — прокрутка или листание, h/l — главы, gg/G — начало/конец, o — оглавление, n — выделения, / — поиск, Esc — закрыть панели. Только когда фокус на читалке.",
 +  "highlight-selection": "Выделить фрагмент",
  };
+--- a/src/main.js
++++ b/src/main.js
+@@ -13,6 +13,7 @@
+  */
+ import { AbstractInputSuggest, Component, FuzzySuggestModal, ItemView, MarkdownView, MarkdownRenderer, Menu, Modal, Notice, Platform, Plugin, PluginSettingTab, Scope, SecretComponent, Setting, TFile, TFolder, normalizePath, requestUrl, setIcon } from "obsidian";
+ import { EpubEngine, ENGINE_EXTENSIONS, coverFromBytes } from "./reader-engine.js";
++import { VIM_NAV_SETTING, VIM_GG_WINDOW_MS, createVimChordState, isTypingTarget, resolveVimNavAction, scrollStepPx } from "./vim-nav.js";
+ import { coverPalette, migrateCoverCache } from "./book-cover.js";
+ // One place decides which extensions the reader opens: the rendering engine
+ // handles everything here except PDF, which keeps its dedicated pdf.js path.
+@@ -145,6 +146,7 @@
+   // always available when the reader does want to open it.
+   bookNoteAppendPromptSeen: false,
+   languagePicked: false, readMode: "pages", pageTurnAnimation: true,
++  vimNavKeys: false,
+   progressToFrontmatter: false, quoteTemplate: "", quoteBacklinks: true,
+   quoteBacklinkLabel: "", noteOpenMode: "split", maxLineCh: 0,
+   notesNextToBook: false, perDevice: false, deviceProfiles: {},
