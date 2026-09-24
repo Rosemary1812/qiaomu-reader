@@ -59,15 +59,33 @@ if (profile.name === "community") {
 const cssSource = fs.readFileSync(path.join(profile.outputDir, "styles.css"), "utf8");
 requireCheck(!/!\s*important\b/i.test(cssSource), "styles.css contains priority overrides; use the scoped component cascade");
 requireCheck(!/:has\s*\(/i.test(cssSource), "styles.css contains relational selectors; use an explicit scoped state class");
-const fontPayloads = bundledFonts.map(({ file, family }) => {
+async function ensureFontFile(file) {
   const font = path.join(root, file);
-  requireCheck(fs.existsSync(font), `missing bundled font source: ${file}`);
-  const bytes = fs.readFileSync(font);
+  try {
+    const bytes = fs.readFileSync(font);
+    if (bytes.length > 1000 && bytes.subarray(0, 4).toString() === "wOF2") return bytes;
+  } catch {}
+  if (!file.endsWith("OpenDyslexic-Regular.woff2")) {
+    throw new Error(`missing bundled font source: ${file}`);
+  }
+  const url = "https://cdn.jsdelivr.net/fontsource/fonts/opendyslexic@5.3.0/latin-400-normal.woff2";
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to download OpenDyslexic WOFF2: ${res.status}`);
+  const bytes = Buffer.from(await res.arrayBuffer());
+  fs.mkdirSync(path.dirname(font), { recursive: true });
+  fs.writeFileSync(font, bytes);
+  return bytes;
+}
+
+const fontPayloads = [];
+for (const { file, family } of bundledFonts) {
+  const bytes = await ensureFontFile(file);
   requireCheck(bytes.subarray(0, 4).toString() === "wOF2", `invalid WOFF2 source: ${file}`);
   requireCheck(cssSource.includes(family), `styles.css is missing bundled font family: ${family}`);
   requireCheck(cssSource.includes(bytes.toString("base64")), `styles.css font payload differs: ${file}`);
-  return { file, bytes: bytes.length, sha256: sha256(font) };
-});
+  const font = path.join(root, file);
+  fontPayloads.push({ file, bytes: bytes.length, sha256: sha256(font) });
+}
 requireCheck(!mainSource.includes("ACP installed but its executable was not found"), "release bundle includes an ACP dependency installer");
 requireCheck(mainSource.includes(fs.readFileSync(path.join(root, "licenses/elton-reader-MIT.txt"), "utf8")), "main.js is missing the inherited MIT license");
 requireCheck(mainSource.includes("SIL OPEN FONT LICENSE Version 1.1"), "main.js is missing the bundled font license");
