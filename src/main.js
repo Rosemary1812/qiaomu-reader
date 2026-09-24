@@ -12420,7 +12420,9 @@ async function ensureAiCliReady(plugin, onStage = () => {}) {
     }
     s.aiCliPaths[cfg.id] = cliPath;
   }
-  let acpPath = await resolveAcpPath(cfg.id, s.aiAcpPaths[cfg.id], { installRoot });
+  const configuredAcpPath = s.aiAcpPaths[cfg.id]
+    || (acp.mode === "native" ? s.aiCliPaths[cfg.id] : "");
+  let acpPath = await resolveAcpPath(cfg.id, configuredAcpPath, { installRoot });
   let installed = false;
   if (!acpPath) {
     if (!acp.autoInstall || !installRoot) {

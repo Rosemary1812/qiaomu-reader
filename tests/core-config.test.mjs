@@ -640,6 +640,9 @@ test("CLI detection includes GUI-safe common install locations", () => {
   assert.ok(candidates.includes("/Users/reader/.local/bin/codex"));
   assert.ok(candidates.includes("/opt/homebrew/bin/codex"));
   assert.ok(candidates.indexOf("/Users/reader/.local/bin/codex") < candidates.indexOf("/custom/bin/codex"));
+  const guiEnvironment = { platform: "darwin", home: "/Users/reader", envPath: "/usr/bin:/bin" };
+  assert.ok(cliPathCandidates("grok-cli", guiEnvironment).includes("/Users/reader/.grok/bin/grok"));
+  assert.ok(acpPathCandidates("grok-cli", guiEnvironment).includes("/Users/reader/.grok/bin/grok"));
 });
 
 test("reading themes migrate legacy names and meet WCAG AA contrast", () => {

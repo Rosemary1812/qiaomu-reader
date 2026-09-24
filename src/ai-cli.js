@@ -190,6 +190,7 @@ function executablePathCandidates(binary, options = {}) {
     : [binary];
   const dirs = [];
   if (home) {
+    if (binary === "grok") dirs.push(join(home, ".grok", "bin"));
     dirs.push(
       join(home, ".local", "bin"),
       join(home, ".npm-global", "bin"),
