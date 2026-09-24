@@ -48,6 +48,7 @@ import { READER_THEMES, READER_THEME_CHOICES, migrateReaderTheme } from "./reade
 import { FONT_FILE_ACCEPT, disposeReaderFonts, importedReaderFonts, listSystemFonts, readerFontStore } from "./reader-fonts.js";
 import { normalizeCustomFontFamily, resolveReaderFont, readerTextCss, syncPageButtons } from "./reader-appearance.js";
 import { BUNDLED_FONT_FAMILIES, ensureBundledReaderFont } from "./bundled-fonts.js";
+import { OPENDYSLEXIC_READER_FONT } from "./opendyslexic-reader-font.js";
 import { cloneJson, createSerialTaskQueue, isPlainRecord, mergeReadingProgress, readJsonRecordStore, writeVerifiedJsonRecord } from "./storage.js";
 import { createReaderLoadCoordinator, isReaderLoadAbort, throwIfReaderLoadAborted, waitForReaderFrame } from "./reader-load.js";
 import { CalibreSearchModal, calibreSafeFilename } from "./calibre-modal.js";
@@ -225,6 +226,7 @@ const READER_FONTS = Object.freeze({
     stack: "'Inter',system-ui,sans-serif",
     labels: { ru: "Inter", en: "Inter", zh: "Inter" },
   },
+  opendyslexic: OPENDYSLEXIC_READER_FONT,
   systemSans: {
     id: "systemSans",
     stack: "-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',sans-serif",

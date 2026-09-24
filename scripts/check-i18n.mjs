@@ -93,6 +93,10 @@ if (!source.includes('id: "sourceHanSerif"') || !source.includes('id: "sourceHan
 if (!source.includes("BUNDLED_FONT_FAMILIES.zhuque")) {
   errors.push("The offline Zhuque Fangsong font is missing");
 }
+const openDyslexicEntry = await fs.readFile(new URL("../src/opendyslexic-reader-font.js", import.meta.url), "utf8");
+if (!openDyslexicEntry.includes("opendyslexic") || !openDyslexicEntry.includes("BUNDLED_FONT_FAMILIES.opendyslexic")) {
+  errors.push("The offline OpenDyslexic font registry entry is missing");
+}
 
 if (!source.includes('function backlinkLabel() { return "↩"; }')) {
   errors.push("Reading-note backlinks are not rendered as a quiet icon-only link");

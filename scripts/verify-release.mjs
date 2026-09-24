@@ -15,6 +15,9 @@ const releaseFiles = ["main.js", "manifest.json", "styles.css"];
 const bundledFonts = [{
   file: "fonts/QiaomuReadingFangsong.woff2",
   family: "QBR Zhuque Fangsong",
+}, {
+  file: "fonts/OpenDyslexic-Regular.woff2",
+  family: "QBR OpenDyslexic",
 }];
 
 function readJson(file) {
@@ -57,19 +60,27 @@ if (profile.name === "community") {
 const cssSource = fs.readFileSync(path.join(profile.outputDir, "styles.css"), "utf8");
 requireCheck(!/!\s*important\b/i.test(cssSource), "styles.css contains priority overrides; use the scoped component cascade");
 requireCheck(!/:has\s*\(/i.test(cssSource), "styles.css contains relational selectors; use an explicit scoped state class");
-const fontPayloads = bundledFonts.map(({ file, family }) => {
+function readFontFile(file) {
   const font = path.join(root, file);
   requireCheck(fs.existsSync(font), `missing bundled font source: ${file}`);
-  const bytes = fs.readFileSync(font);
+  return fs.readFileSync(font);
+}
+
+const fontPayloads = [];
+for (const { file, family } of bundledFonts) {
+  const bytes = readFontFile(file);
+  requireCheck(bytes.length > 1000, `invalid bundled font source: ${file}`);
   requireCheck(bytes.subarray(0, 4).toString() === "wOF2", `invalid WOFF2 source: ${file}`);
   requireCheck(cssSource.includes(family), `styles.css is missing bundled font family: ${family}`);
   requireCheck(cssSource.includes(bytes.toString("base64")), `styles.css font payload differs: ${file}`);
-  return { file, bytes: bytes.length, sha256: sha256(font) };
-});
+  const font = path.join(root, file);
+  fontPayloads.push({ file, bytes: bytes.length, sha256: sha256(font) });
+}
 requireCheck(!mainSource.includes("ACP installed but its executable was not found"), "release bundle includes an ACP dependency installer");
 requireCheck(mainSource.includes(fs.readFileSync(path.join(root, "licenses/elton-reader-MIT.txt"), "utf8")), "main.js is missing the inherited MIT license");
 requireCheck(mainSource.includes("SIL OPEN FONT LICENSE Version 1.1"), "main.js is missing the bundled font license pointer");
 requireCheck(cssSource.includes(fs.readFileSync(path.join(root, "fonts/OFL.txt"), "utf8")), "styles.css is missing the bundled font license");
+requireCheck(cssSource.includes(fs.readFileSync(path.join(root, "fonts/OpenDyslexic-OFL.txt"), "utf8")), "styles.css is missing the OpenDyslexic font license");
 requireCheck(cssSource.includes(fs.readFileSync(path.join(root, "fonts/README.md"), "utf8")), "styles.css is missing the bundled font provenance");
 const dictionaryLicenseComment = fs.readFileSync(path.join(root, "licenses/freedict-eng-zho-CC-BY-SA-3.0.txt"), "utf8").split("\n").map(line => line ? ` * ${line}` : " *").join("\n");
 requireCheck(cssSource.includes(dictionaryLicenseComment), "styles.css is missing the offline dictionary license");
