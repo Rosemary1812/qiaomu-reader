@@ -14,6 +14,9 @@ const releaseFiles = ["main.js", "manifest.json", "styles.css"];
 const bundledFonts = [{
   file: "fonts/QiaomuReadingFangsong.woff2",
   family: "QBR Zhuque Fangsong",
+}, {
+  file: "fonts/OpenDyslexic-Regular.woff2",
+  family: "QBR OpenDyslexic",
 }];
 
 function readJson(file) {
