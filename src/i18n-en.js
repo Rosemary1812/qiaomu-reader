@@ -1,1 +1,1 @@
-@file:///workspace/qiaomu-reader/src/i18n-en.js
+PLACEHOLDER_WILL_BE_REPLACED_BY_SHELL_HELPER
