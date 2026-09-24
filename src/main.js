@@ -1048,7 +1048,10 @@ function vimNavScroll(view, dy) {
     return;
   }
   if (view.engine && readerVimScrollMode(view)) {
-    view.engine.scrollBy(0, dy);
+    const moved = view.engine.scrollBy(0, dy);
+    if (moved?.catch) void moved.catch((error) => {
+      console.warn("Qiaomu Reader: could not scroll with Vim shortcut", error);
+    });
   }
 }
 

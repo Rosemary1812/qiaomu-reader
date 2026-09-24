@@ -100,10 +100,10 @@ test("continuous EPUB scroll keeps adjacent chapters in one flow and unloads dis
     await Promise.race([renderer.goTo({ index: 0, anchor: 0 }), new Promise((_, reject) => globalThis.setTimeout(() => reject(new Error("goTo timed out")), 2000))]);
     await until(() => renderer.getContents().length === 2);
     assert.deepEqual(Array.from(renderer.getContents(), item => item.index), [0, 1]);
-    await renderer.next(300);
+    await renderer.scrollBy(0, 300);
     await until(() => renderer.getContents().some(item => item.index === 2));
     assert.ok(locations.includes(1), "progress moves to the next section while scrolling");
-    await renderer.next(300);
+    await renderer.scrollBy(0, 300);
     await until(() => renderer.getContents().some(item => item.index === 4));
     assert.deepEqual(Array.from(renderer.getContents(), item => item.index), [1, 2, 4]);
     assert.ok(sections[0].unloads >= 1, "distant sections release their resources");

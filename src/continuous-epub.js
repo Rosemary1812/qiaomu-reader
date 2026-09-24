@@ -383,6 +383,12 @@ export class ContinuousEpubRenderer extends HTMLElement {
         void this.#maintainWindow();
     }
 
+    async scrollBy(dx, dy) {
+        if (!Number.isFinite(dy) || dy === 0) return;
+        if (dy > 0) await this.next(dy);
+        else await this.prev(-dy);
+    }
+
     async scrollToAnchor(anchor) {
         const record = this.#records.get(this.#currentIndex);
         if (!record) return;
