@@ -1,0 +1,1 @@
+https://raw.githubusercontent.com/Rosemary1812/qiaomu-reader/main/src/i18n-en.js
