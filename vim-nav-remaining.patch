@@ -1,0 +1,90 @@
+--- a/src/i18n-en.js
++++ b/src/i18n-en.js
+@@ -1299,4 +1299,7 @@
+   "translation-enable-daily": "Enable Daily Notes…",
+   "translation-saved": "Saved to {0}",
+   "translation-save-failed": "Could not save. Check the note destination and try again.",
++  "vim-style-shortcuts": "Vim-style shortcuts",
++  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "When on: j/k scroll or turn pages, h/l chapters, gg/G start/end, o TOC, n highlights, / search, Esc closes panels. Only while the reader is focused.",
++  "highlight-selection": "Highlight selection",
+ };
+--- a/src/i18n-zh.js
++++ b/src/i18n-zh.js
+@@ -1745,4 +1745,7 @@
+   "cjk-serif": "宋体",
+   "kaiti": "楷体",
+   "this-format-can-currently-only-be-read-on-desktop": "该格式目前仅支持在桌面端阅读。",
++  "vim-style-shortcuts": "Vim 风格快捷键",
++  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "开启后：j/k 滚动或翻页，h/l 切换章节，gg/G 到开头/结尾，o 目录，n 划线，/ 搜索，Esc 关闭面板。仅在阅读界面聚焦时生效。",
++  "highlight-selection": "高亮选中文字",
+ });
+--- a/src/locales/de.js
++++ b/src/locales/de.js
+@@ -1299,4 +1299,7 @@
+   "translation-enable-daily": "Tägliche Notizen aktivieren…",
+   "translation-saved": "In {0} gespeichert",
+   "translation-save-failed": "Speichern fehlgeschlagen. Prüfe die Zielnotiz und versuche es erneut.",
++  "vim-style-shortcuts": "Vim-Tastenkürzel",
++  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "Wenn aktiv: j/k scrollen oder umblättern, h/l Kapitel, gg/G Anfang/Ende, o Inhaltsverzeichnis, n Markierungen, / Suche, Esc schließt Panels. Nur bei Fokus im Leser.",
++  "highlight-selection": "Auswahl markieren",
+ };
+--- a/src/locales/es.js
++++ b/src/locales/es.js
+@@ -1299,4 +1299,7 @@
+   "translation-enable-daily": "Activar notas diarias…",
+   "translation-saved": "Guardado en {0}",
+   "translation-save-failed": "No se pudo guardar. Revisa la nota de destino e inténtalo de nuevo.",
++  "vim-style-shortcuts": "Atajos estilo Vim",
++  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "Si está activo: j/k desplazan o pasan página, h/l capítulos, gg/G inicio/fin, o índice, n resaltados, / buscar, Esc cierra paneles. Solo con el lector enfocado.",
++  "highlight-selection": "Resaltar selección",
+ };
+--- a/src/locales/fr.js
++++ b/src/locales/fr.js
+@@ -1299,4 +1299,7 @@
+   "translation-enable-daily": "Activer les notes quotidiennes…",
+   "translation-saved": "Enregistré dans {0}",
+   "translation-save-failed": "Échec de l’enregistrement. Vérifiez la note de destination et réessayez.",
++  "vim-style-shortcuts": "Raccourcis style Vim",
++  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "Si activé : j/k défilent ou tournent les pages, h/l chapitres, gg/G début/fin, o table des matières, n surlignages, / recherche, Esc ferme les panneaux. Uniquement quand le lecteur a le focus.",
++  "highlight-selection": "Surligner la sélection",
+ };
+--- a/src/locales/ja.js
++++ b/src/locales/ja.js
+@@ -1299,4 +1299,7 @@
+   "translation-enable-daily": "デイリーノートを有効にする…",
+   "translation-saved": "{0} に保存しました",
+   "translation-save-failed": "保存できませんでした。保存先のノートを確認して再試行してください。",
++  "vim-style-shortcuts": "Vim風ショートカット",
++  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "オン時：j/k でスクロールまたはページ送り、h/l で章移動、gg/G で先頭/末尾、o で目次、n でハイライト、/ で検索、Esc でパネルを閉じます。リーダーにフォーカスがあるときのみ有効です。",
++  "highlight-selection": "選択をハイライト",
+ };
+--- a/src/locales/ko.js
++++ b/src/locales/ko.js
+@@ -1299,4 +1299,7 @@
+   "translation-enable-daily": "일일 노트 활성화…",
+   "translation-saved": "{0}에 저장됨",
+   "translation-save-failed": "저장하지 못했습니다. 대상 노트를 확인하고 다시 시도하세요.",
++  "vim-style-shortcuts": "Vim 스타일 단축키",
++  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "켜면: j/k로 스크롤 또는 페이지 넘김, h/l로 챕터, gg/G로 처음/끝, o로 목차, n으로 하이라이트, /로 검색, Esc로 패널 닫기. 리더에 포커스가 있을 때만 동작합니다.",
++  "highlight-selection": "선택 하이라이트",
+ };
+--- a/src/locales/pt.js
++++ b/src/locales/pt.js
+@@ -1299,4 +1299,7 @@
+   "translation-enable-daily": "Ativar notas diárias…",
+   "translation-saved": "Salvo em {0}",
+   "translation-save-failed": "Não foi possível salvar. Verifique a nota de destino e tente novamente.",
++  "vim-style-shortcuts": "Atalhos estilo Vim",
++  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "Quando ativo: j/k rolam ou viram páginas, h/l capítulos, gg/G início/fim, o sumário, n destaques, / busca, Esc fecha painéis. Só com o leitor em foco.",
++  "highlight-selection": "Destacar seleção",
+ };
+--- a/src/locales/ru.js
++++ b/src/locales/ru.js
+@@ -1301,4 +1301,7 @@
+   "translation-enable-daily": "Включить ежедневные заметки…",
+   "translation-saved": "Сохранено в {0}",
+   "translation-save-failed": "Не удалось сохранить. Проверьте заметку назначения и повторите попытку.",
++  "vim-style-shortcuts": "Vim-подобные сочетания",
++  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "Если включено: j/k — прокрутка или листание, h/l — главы, gg/G — начало/конец, o — оглавление, n — выделения, / — поиск, Esc — закрыть панели. Только когда фокус на читалке.",
++  "highlight-selection": "Выделить фрагмент",
+ };
