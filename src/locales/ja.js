@@ -1299,4 +1299,7 @@ export default {
   "translation-enable-daily": "デイリーノートを有効にする…",
   "translation-saved": "{0} に保存しました",
   "translation-save-failed": "保存できませんでした。保存先のノートを確認して再試行してください。",
+  "vim-style-shortcuts": "Vim風ショートカット",
+  "when-on-j-k-scroll-or-turn-pages-h-l-chapters-gg-g-start-end-o-toc-n-highlights-slash-search-esc-closes-panels-only-while-the-reader-is-focused": "オン時：j/k でスクロールまたはページ送り、h/l で章移動、gg/G で先頭/末尾、o で目次、n でハイライト、/ で検索、Esc でパネルを閉じます。リーダーにフォーカスがあるときのみ有効です。",
+  "highlight-selection": "選択をハイライト",
 };

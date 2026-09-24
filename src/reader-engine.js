@@ -263,6 +263,12 @@ export class EpubEngine {
     }
     async goToTocItem(item) { return this.goTo(item?.href ?? item); }
 
+    // Scrolled flow: forward pixel deltas to foliate's renderer so j/k can
+    // scroll instead of turning pages when readMode is "scroll".
+    scrollBy(dx, dy) {
+        this.#view?.renderer?.scrollBy?.(dx, dy);
+    }
+
     currentLocation() {
         return this.#view?.lastLocation ?? null;
     }
