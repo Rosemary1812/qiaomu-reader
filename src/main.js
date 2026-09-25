@@ -49,6 +49,8 @@ import { normalizeCustomFontFamily, resolveReaderFont, readerTextCss, syncPageBu
 import { BUNDLED_FONT_FAMILIES, ensureBundledReaderFont } from "./bundled-fonts.js";
 import { cloneJson, createSerialTaskQueue, isPlainRecord, mergeReadingProgress, readJsonRecordStore, writeVerifiedJsonRecord } from "./storage.js";
 import { createReaderLoadCoordinator, isReaderLoadAbort, throwIfReaderLoadAborted, waitForReaderFrame } from "./reader-load.js";
+import { contextProvider, findAgent, notifyContextChanged } from "./qiaomu-context.js";
+import { AI_ASSISTANT_ROUTES, readerSnapshot, shouldUseAgent } from "./agent-bridge.js";
 
 // Interface language is local to this plugin; dictionaries are bundled offline.
 let qiaomuReaderLanguage = "zh";
@@ -113,6 +115,8 @@ const DEFAULT_READER_SESSION = {
 const DEFAULT_AI = {
   aiCompanionVisible: null,
   aiEnabled: false, aiNeedsVerification: false, aiProvider: "",
+  // "auto" | "builtin" | "agent": who answers Ask AI when Qiaomu Agent is installed.
+  aiAssistant: "auto",
   // The API key itself lives in Obsidian SecretStorage. data.json keeps only
   // the selected secret ID so vault syncing never copies the key.
   // aiSecret and aiBase remain only as migration bridges for versions before
@@ -1475,6 +1479,8 @@ const QiaomuBookReader = class extends Plugin {
     this._unloading = false;
     this._watchCompanionAndNotes();
     this._registerReaderViews();
+    // Shares the open book with Qiaomu Agent (Qiaomu Context Protocol, see qiaomu-context.js).
+    this.qiaomuContext = contextProvider((leaf) => readerLeafSnapshot(this, leaf));
     this._registerBookProtocol();
     this._registerReaderExtensions();
     this._addRibbonEntry();
@@ -1771,6 +1777,21 @@ const QiaomuBookReader = class extends Plugin {
     void this._showCompanionForBook(leaf.view);
     return leaf.view;
   }
+  /** True when Qiaomu Agent took the question: chosen in settings, or while the built-in AI is not set up. */
+  async _answerWithAgent(context, options = {}) {
+    const agent = options.automatic ? null : findAgent(this.app);
+    if (!agent || !context?.bookFile) return false;
+    const state = aiSetupState(this);
+    if (!shouldUseAgent(this.settings.aiAssistant, { builtinReady: state.ready && state.enabled, agentAvailable: true })) return false;
+    try {
+      return await askAgentFromReader(this, agent, context);
+    } catch (error) {
+      console.warn("Qiaomu Reader: Qiaomu Agent could not open", error);
+      new Notice(qiaomuReaderTranslate("could-not-open-the-ai-reading-sidebar"));
+      return true;
+    }
+  }
+  qiaomuAgentAvailable() { return findAgent(this.app) !== null; }
   async openAiChat(context = null, options = {}) {
     let target = null;
     if (!context) {
@@ -1778,6 +1799,7 @@ const QiaomuBookReader = class extends Plugin {
       target = view?.bookHtml ? view : (this._openReaderModal?.bookHtml ? this._openReaderModal : null);
       if (target) context = readerAiPanelContext(target);
     }
+    if (await this._answerWithAgent?.(context, options)) return;
     if (this.app.isMobile) {
       const state = aiSetupState(this);
       if (!(state.ready && state.enabled)) {
@@ -2401,6 +2423,7 @@ const QiaomuBookReader = class extends Plugin {
     }
   }
   saveProgress(bookPath, spread, total, block, cfi) {
+    notifyContextChanged(this.app, this.manifest.id);
     const ratio = total > 1 ? spread / (total - 1) : 0;
     const percent = Math.round(ratio * 100);
     const stamp = Date.now();
@@ -3717,6 +3740,25 @@ function readerAiPanelContext(view) {
     bookFile: view.file,
     readerView: view,
   };
+}
+/** Marks a condensed PDF document context so the agent knows it is not the full text. */
+function agentReadyContext(context) {
+  if (!context) return null;
+  const pdf = context.kind === "document" ? context.readerView?.pdfDocumentContext : null;
+  return { ...context, truncated: pdf?.truncated === true };
+}
+function readerLeafSnapshot(plugin, leaf) {
+  const view = leaf?.view;
+  if (!(view instanceof ReaderView) || !view.file || !view.bookHtml) return null;
+  return readerSnapshot(plugin.manifest.id, agentReadyContext(readerAiPanelContext(view)) || { bookFile: view.file });
+}
+async function askAgentFromReader(plugin, agent, context) {
+  const view = context.readerView;
+  const surrounding = context.kind === "selection" && view ? agentReadyContext(readerDefaultAiContext(view)) : null;
+  const snapshot = readerSnapshot(plugin.manifest.id, agentReadyContext(context), surrounding);
+  if (!snapshot) return false;
+  await agent.ask({ context: snapshot });
+  return true;
 }
 function readerSupportsAiContext(view) {
   if (!view?.file || !view?.bookHtml) return false;
@@ -12557,6 +12599,7 @@ const SettingsTab = class extends PluginSettingTab {
     const s = plugin.settings;
     const cfg = aiConfig(plugin);
     c.addClass("qiaomu-reader-ai-setup");
+    if (plugin.qiaomuAgentAvailable?.()) this._aiAssistantRow(c, s);
     this._aiProviderRow(c, s, redraw);
     if (!cfg.provider) return;
     const p = cfg.provider;
@@ -12635,6 +12678,18 @@ const SettingsTab = class extends PluginSettingTab {
       }));
     };
     render();
+  }
+  /** Shown only while Qiaomu Agent is installed and enabled. */
+  _aiAssistantRow(host, s) {
+    new Setting(host).setName(qiaomuReaderTranslate("ai-assistant")).addDropdown(dropdown => {
+      dropdown.selectEl.setAttribute("aria-label", qiaomuReaderTranslate("ai-assistant"));
+      const labels = { auto: qiaomuReaderTranslate("ai-assistant-auto"), builtin: qiaomuReaderTranslate("ai-assistant-builtin"), agent: qiaomuReaderTranslate("ai-assistant-agent") };
+      for (const route of AI_ASSISTANT_ROUTES) dropdown.addOption(route, labels[route]);
+      dropdown.setValue(AI_ASSISTANT_ROUTES.includes(s.aiAssistant) ? s.aiAssistant : "auto").onChange(async route => {
+        s.aiAssistant = route;
+        await this._saveAll();
+      });
+    });
   }
   _aiProviderRow(host, s, redraw) {
     new Setting(host).setName(qiaomuReaderTranslate("ai-service")).addDropdown(dropdown => {
