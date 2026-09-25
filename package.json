@@ -1,7 +1,7 @@
 {
   "name": "qiaomu-reader",
-  "version": "4.2.12",
-  "description": "中文优先的 Obsidian EPUB 与 PDF 阅读器，支持划线、批注、阅读笔记和进度同步。",
+  "version": "4.2.18",
+  "description": "Qiaomu Reader 非官方增强版，支持电子书阅读、离线查词、划线、批注、阅读笔记和可选 AI 伴读。",
   "main": "main.js",
   "type": "module",
   "scripts": {
@@ -23,7 +23,15 @@
     "reader",
     "highlights"
   ],
-  "author": "向阳乔木",
+  "author": "向阳乔木 / Rosemary1812",
+  "homepage": "https://github.com/Rosemary1812/qiaomu-reader#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rosemary1812/qiaomu-reader.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rosemary1812/qiaomu-reader/issues"
+  },
   "license": "GPL-3.0-only",
   "devDependencies": {
     "@xmldom/xmldom": "^0.9.12",

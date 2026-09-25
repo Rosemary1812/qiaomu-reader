@@ -981,6 +981,7 @@ export default {
   "choose-a-service": "Escolher um serviço",
   "choose-a-service-to-configure-its-model-and-key-ai-is-off-by-def": "Escolha um serviço para configurar seu modelo e chave. A IA está desativada por padrão e a leitura offline não é afetada.",
   "api-key": "Chave de API",
+  "api-key-optional": "Chave de API (opcional)",
   "the-key-is-stored-in-obsidian-secretstorage-and-is-not-written-t": "A chave é armazenada no Obsidian SecretStorage e não é gravada no data.json do plugin.",
   "get-api-key": "Obter chave de API",
   "model-2": "Modelo",

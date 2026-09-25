@@ -983,6 +983,7 @@ export default {
   "choose-a-service": "Выберите сервис",
   "choose-a-service-to-configure-its-model-and-key-ai-is-off-by-def": "Выберите сервис, затем настройте модель и ключ. AI по умолчанию выключен и не влияет на офлайн-чтение.",
   "api-key": "API-ключ",
+  "api-key-optional": "API-ключ (необязательно)",
   "the-key-is-stored-in-obsidian-secretstorage-and-is-not-written-t": "Ключ хранится в хранилище секретов Obsidian и не записывается в data.json плагина.",
   "get-api-key": "Получить ключ",
   "model-2": "Модель",

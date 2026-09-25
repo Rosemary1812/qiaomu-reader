@@ -37,7 +37,7 @@ function setup(provider, model = "", key = "") {
     aiConfig: p => ({ id: p.settings.aiProvider, provider: AI_PROVIDERS[p.settings.aiProvider], key }),
     aiSetupState: () => ({ enabled: false }),
   });
-  const settings = { aiProvider: provider, aiModel: model, aiModels: {} };
+  const settings = { aiProvider: provider, aiModel: model, aiModels: {}, aiSecrets: {}, aiBases: {} };
   let saved = 0, redrawn = 0;
   const tab = new Tab({}, { settings, saveAll: async () => { saved++; } });
   for (const method of ["_aiSecretRow", "_aiCliRows", "_aiBaseRow", "_aiEffortRow", "_aiThinkingRow", "_aiTestRow", "_aiTailRows"]) tab[method] = host => host.createDiv({ cls: method });
@@ -63,10 +63,23 @@ test("missing cloud keys are visible; saved keys and built-in endpoints are fold
 
 test("custom endpoints and existing custom model values remain directly editable", () => {
   const { host } = setup("custom", "my-model");
+  assert.equal(folded(host.querySelector("._aiSecretRow")), false);
   assert.equal(folded(host.querySelector("._aiBaseRow")), false);
   const input = host.querySelector("input");
   assert.equal(input.value, "my-model");
   assert.equal(input.closest(".setting-item").classList.contains("qiaomu-reader-hidden"), false);
+});
+
+test("switching providers preserves provider-scoped secrets and endpoint overrides", async () => {
+  const x = setup("custom", "my-model");
+  x.settings.aiSecrets = { custom: "custom-key", openai: "openai-key" };
+  x.settings.aiBases = { custom: "https://example.com/v1" };
+  const select = x.host.querySelector("select");
+  select.value = "openai";
+  select.dispatchEvent(new x.window.Event("change"));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(x.settings.aiSecrets, { custom: "custom-key", openai: "openai-key" });
+  assert.deepEqual(x.settings.aiBases, { custom: "https://example.com/v1" });
 });
 
 test("choosing a model saves per provider and requires a fresh connection check", async () => {

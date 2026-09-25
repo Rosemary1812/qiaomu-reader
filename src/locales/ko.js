@@ -981,6 +981,7 @@ export default {
   "choose-a-service": "서비스 선택",
   "choose-a-service-to-configure-its-model-and-key-ai-is-off-by-def": "서비스를 선택하여 모델과 키를 구성하세요. AI는 기본적으로 꺼져 있으며 오프라인 읽기는 영향을 받지 않습니다.",
   "api-key": "API 키",
+  "api-key-optional": "API 키(선택 사항)",
   "the-key-is-stored-in-obsidian-secretstorage-and-is-not-written-t": "키는 Obsidian SecretStorage에 저장되며 플러그인 data.json에 기록되지 않습니다.",
   "get-api-key": "API 키 가져오기",
   "model-2": "모델",

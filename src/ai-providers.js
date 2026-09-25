@@ -208,12 +208,18 @@ export function classifyAiHttpStatus(status) {
 }
 
 export function buildAiRequestBody(providerId, model, messages, options = {}) {
+  const deepSeekThinking = providerId === "deepseek"
+    && !options.connectionTest
+    && options.thinkingEnabled !== false;
   const body = {
     model,
     messages,
     temperature: 0.2,
-    max_tokens: options.connectionTest ? 16 : 2400,
   };
+  // DeepSeek counts reasoning and the visible answer against the same
+  // max_tokens budget. Let its thinking-mode default apply so reasoning cannot
+  // consume the entire 2400-token cap before a final answer starts.
+  if (!deepSeekThinking) body.max_tokens = options.connectionTest ? 16 : 2400;
   if (options.stream) body.stream = true;
   // A connection check needs one short answer. In real reading conversations
   // DeepSeek may return reasoning_content, which the UI shows separately.

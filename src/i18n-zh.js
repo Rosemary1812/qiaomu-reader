@@ -972,6 +972,7 @@ export const QIAOMU_READER_ZH_CN = {
   "choose-a-service": "请选择服务",
   "choose-a-service-to-configure-its-model-and-key-ai-is-off-by-def": "选择服务后再配置模型和密钥。AI 功能默认关闭，不影响离线阅读。",
   "api-key": "API 密钥",
+  "api-key-optional": "API 密钥（可选）",
   "the-key-is-stored-in-obsidian-secretstorage-and-is-not-written-t": "密钥保存在 Obsidian 密钥库中，不会写入插件 data.json。",
   "get-api-key": "获取密钥",
   "model-2": "模型",

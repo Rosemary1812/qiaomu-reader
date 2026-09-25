@@ -1,5 +1,9 @@
 # Source and third-party notices
 
+This repository is an unofficial modified fork of [joeseesun/qiaomu-reader](https://github.com/joeseesun/qiaomu-reader). Fork-specific work is maintained at [Rosemary1812/qiaomu-reader](https://github.com/Rosemary1812/qiaomu-reader). The project name and original copyright notices are retained for attribution; the fork is not presented as an official release by the upstream maintainer.
+
+The fork carries prominent modification notices in `README.md` and `CHANGELOG.md`. Git history records the authors and dates of individual changes. Source releases and compiled plugin assets remain under GPL-3.0-only, while third-party components retain their respective terms.
+
 Qiaomu Reader contains adapted portions of [Elton Reader](https://github.com/swayinfo/elton-reader), copyright (c) 2026 Elton Labs, originally released under the MIT license. Those portions retain the [original MIT terms](licenses/elton-reader-MIT.txt). Qiaomu additions and the project as a whole are distributed under GPL-3.0-only; this does not replace the original notices or grant exclusive rights over upstream code.
 
 The upstream source examined for this notice is commit `46c2eb7f63e183ab09e9a741fcda3347e6aa1fba`. Changing the repository name, history or rendering engine does not establish independent provenance. Community-directory submission remains subject to Obsidian's fork policy and publicly verifiable authorization; [the authorization request](https://github.com/swayinfo/elton-reader/issues/14) is not itself approval.
