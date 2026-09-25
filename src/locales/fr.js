@@ -30,6 +30,8 @@ export default {
 
   "library-with-highlights": "Avec surlignages",
   "library-continue": "Continuer la lecture",
+  "library-note-count": "{0} notes",
+  "library-view-notes": "Voir les notes",
   "library-highlight-count": "{0} surlignages",
   "library-open-note": "Ouvrir la note",
   "library-create-note": "Prendre des notes",

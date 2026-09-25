@@ -41,17 +41,35 @@ function setup() {
   return { window, Library, library, file, reader, host, stats: () => ({ reads, notes, menus, panels }) };
 }
 
-test("library note and highlight controls do not also open the book through card keyboard bubbling", async () => {
+test("library note and continue controls do not also open the book through card keyboard bubbling", async () => {
   const x = setup();
-  const [highlight, note] = x.host.querySelectorAll(".qiaomu-reader-lib-study-button");
-  note.dispatchEvent(new x.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-  note.click();
-  assert.deepEqual(x.stats(), { reads: 0, notes: 1, menus: 0, panels: 0 });
-  highlight.dispatchEvent(new x.window.KeyboardEvent("keydown", { key: " ", bubbles: true }));
-  highlight.click();
+  const [resume, notes] = x.host.querySelectorAll(".qiaomu-reader-lib-action");
+  notes.dispatchEvent(new x.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  notes.click();
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(x.stats(), { reads: 1, notes: 1, menus: 0, panels: 1 });
+  assert.deepEqual(x.stats(), { reads: 1, notes: 0, menus: 0, panels: 1 });
   assert.equal(x.reader.panelOpen, "highlights");
+  resume.dispatchEvent(new x.window.KeyboardEvent("keydown", { key: " ", bubbles: true }));
+  resume.click();
+  assert.deepEqual(x.stats(), { reads: 2, notes: 0, menus: 0, panels: 1 });
+});
+
+test("a book without notes stays quiet and only offers continue reading", () => {
+  const x = setup();
+  x.host.replaceChildren();
+  x.library.plugin.getHighlights = () => [];
+  x.library.renderCard(x.host, x.file);
+  assert.equal(x.host.querySelector(".qiaomu-reader-lib-note-count"), null);
+  assert.equal(x.host.querySelectorAll(".qiaomu-reader-lib-action").length, 1);
+  assert.equal(x.host.querySelector(".qiaomu-reader-lib-action-label").textContent, "library-continue");
+});
+
+test("notes appear in the reading status and the cover offers view notes", () => {
+  const x = setup();
+  const count = x.host.querySelector(".qiaomu-reader-lib-note-count");
+  assert.equal(count.textContent, "library-note-count:1");
+  const labels = [...x.host.querySelectorAll(".qiaomu-reader-lib-action-label")].map(el => el.textContent);
+  assert.deepEqual(labels, ["library-continue", "library-view-notes"]);
 });
 
 test("card keyboard activation opens once and menu activation stays local", () => {

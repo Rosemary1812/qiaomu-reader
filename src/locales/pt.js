@@ -30,6 +30,8 @@ export default {
 
   "library-with-highlights": "Com destaques",
   "library-continue": "Continuar lendo",
+  "library-note-count": "{0} notas",
+  "library-view-notes": "Ver notas",
   "library-highlight-count": "{0} destaques",
   "library-open-note": "Abrir nota",
   "library-create-note": "Fazer anotações",

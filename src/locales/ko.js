@@ -30,6 +30,8 @@ export default {
 
   "library-with-highlights": "하이라이트 있음",
   "library-continue": "계속 읽기",
+  "library-note-count": "노트 {0}개",
+  "library-view-notes": "노트 보기",
   "library-highlight-count": "하이라이트 {0}개",
   "library-open-note": "독서 노트",
   "library-create-note": "노트 작성",

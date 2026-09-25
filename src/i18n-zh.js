@@ -32,6 +32,8 @@ export const QIAOMU_READER_ZH_CN = {
 
   "library-with-highlights": "有划线",
   "library-continue": "继续阅读",
+  "library-note-count": "{0} 条笔记",
+  "library-view-notes": "查看笔记",
   "library-highlight-count": "{0} 处划线",
   "library-open-note": "阅读笔记",
   "library-create-note": "做笔记",

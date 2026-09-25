@@ -30,6 +30,8 @@ export default {
 
   "library-with-highlights": "ハイライトあり",
   "library-continue": "続きを読む",
+  "library-note-count": "ノート {0} 件",
+  "library-view-notes": "ノートを見る",
   "library-highlight-count": "ハイライト {0} 件",
   "library-open-note": "読書ノート",
   "library-create-note": "ノートを書く",

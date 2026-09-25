@@ -111,6 +111,38 @@ test("continuous EPUB scroll keeps adjacent chapters in one flow and unloads dis
   } finally { renderer.destroy(); dom.window.close(); }
 });
 
+test("dropping a tall chapter above the viewport does not jump backward", async () => {
+  const { dom, ContinuousEpubRenderer } = await rendererFixture();
+  const sections = Array.from({ length: 5 }, (_, index) => ({
+    linear: index === 3 ? "no" : "yes",
+    load: async () => `data:text/html,<html><body><p>Chapter ${index}</p></body></html>`,
+    unload() {},
+  }));
+  const renderer = new ContinuousEpubRenderer();
+  renderer.addEventListener("load", ({ detail: { doc } }) => {
+    Object.defineProperty(doc.body, "scrollHeight", { configurable: true, get: () => 184 });
+    doc.body.getBoundingClientRect = () => ({ bottom: 212 });
+  });
+  dom.window.document.querySelector("main").append(renderer);
+  renderer.open({ sections });
+  try {
+    await renderer.goTo({ index: 0, anchor: 0 });
+    await until(() => renderer.getContents().length === 2);
+    const scroller = renderer.getContents()[0].doc._frame.parentElement.parentElement.parentElement;
+    let requestedTop = 0;
+    Object.defineProperty(scroller, "scrollTop", { configurable: true,
+      get() { return Math.max(0, Math.min(requestedTop, this.scrollHeight - this.clientHeight)); },
+      set(value) { requestedTop = Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight)); },
+    });
+    await renderer.scrollBy(0, 300);
+    await until(() => renderer.getContents().some(item => item.index === 2));
+    await renderer.scrollBy(0, 300);
+    await until(() => !renderer.getContents().some(item => item.index === 0));
+    assert.equal(scroller.scrollTop, 360, "pruning the cover preserves the visible chapter position");
+    assert.deepEqual(Array.from(renderer.getContents(), item => item.index), [1, 2, 4]);
+  } finally { renderer.destroy(); dom.window.close(); }
+});
+
 test("downward wheel movement waits for a loading chapter instead of disappearing", async () => {
   const { dom, ContinuousEpubRenderer } = await rendererFixture();
   let releaseNext;

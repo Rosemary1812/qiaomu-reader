@@ -30,6 +30,8 @@ export const QIAOMU_READER_EN = {
 
   "library-with-highlights": "With highlights",
   "library-continue": "Continue reading",
+  "library-note-count": "{0} notes",
+  "library-view-notes": "View notes",
   "library-highlight-count": "{0} highlights",
   "library-open-note": "Open note",
   "library-create-note": "Take notes",

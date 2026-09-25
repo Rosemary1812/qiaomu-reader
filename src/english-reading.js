@@ -73,13 +73,19 @@ export function englishSelectionKind(text) {
 }
 
 export function englishGlossViewport(doc, readingArea) {
-  const frame = doc.defaultView?.frameElement?.getBoundingClientRect();
+  const view = doc.defaultView;
+  const frame = view?.frameElement?.getBoundingClientRect();
   const area = readingArea?.getBoundingClientRect();
   if (frame && area) return {
     left: area.left - frame.left, right: area.right - frame.left,
     top: area.top - frame.top, bottom: area.bottom - frame.top,
   };
-  return { left: 0, right: doc.defaultView.innerWidth, top: 0, bottom: doc.defaultView.innerHeight };
+  if (view) return { left: 0, right: view.innerWidth, top: 0, bottom: view.innerHeight };
+  // A delayed gloss refresh can run after the continuous reader has detached
+  // its iframe, at which point the document no longer has a defaultView.
+  const width = area?.width ?? (area ? area.right - area.left : readingArea?.clientWidth) ?? 0;
+  const height = area?.height ?? (area ? area.bottom - area.top : readingArea?.clientHeight) ?? 0;
+  return { left: 0, right: width, top: 0, bottom: height };
 }
 
 // Draw annotations in a shadow root, without changing the EPUB text nodes.

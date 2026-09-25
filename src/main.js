@@ -11195,6 +11195,7 @@ const LibraryModal = class extends Modal {
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
+    this._libActionSeq = 0;
   }
   async onOpen() { const { modalEl, contentEl } = this;
     const render = this._libraryRender = {};
@@ -11594,6 +11595,8 @@ const LibraryModal = class extends Modal {
       const strip = cover.createDiv("qiaomu-reader-lib-strip");
       strip.createDiv("qiaomu-reader-lib-strip-fill").style.width = `${pct}%`;
     }
+    const highlights = this.plugin.getHighlights(bookPath);
+    const noteCount = highlights.length;
     const info = card.createDiv("qiaomu-reader-lib-info");
     info.createDiv("qiaomu-reader-lib-book-title").setText(file.basename);
     const meta = info.createDiv("qiaomu-reader-lib-book-meta");
@@ -11603,14 +11606,65 @@ const LibraryModal = class extends Modal {
     } else {
       meta.setText(qiaomuReaderTranslate("not-started-2"));
     }
-    const actions = info.createDiv("qiaomu-reader-lib-study");
-    const highlights = this.plugin.getHighlights(bookPath);
-    const highlightsButton = actions.createEl("button", { cls: "qiaomu-reader-lib-study-button", text: qiaomuReaderTranslate("library-highlight-count", highlights.length) });
-    highlightsButton.addEventListener("click", ev => { ev.stopPropagation(); void this._openLibHighlights(file); });
-    const noteName = bookNoteLinkFor(this.plugin, file);
-    const hasNote = noteName && resolveBookNote(this.app, noteName);
-    const notesButton = actions.createEl("button", { cls: "qiaomu-reader-lib-study-button", text: qiaomuReaderTranslate(hasNote ? "library-open-note" : "library-create-note") });
-    notesButton.addEventListener("click", ev => { ev.stopPropagation(); this.close(); void openOrCreateBookNoteBeside(this.plugin, file); });
+    if (noteCount > 0) {
+      if (meta.textContent) meta.append(docOf(meta).createTextNode(" · "));
+      meta.createSpan({ cls: "qiaomu-reader-lib-note-count", text: qiaomuReaderTranslate("library-note-count", noteCount) });
+    }
+    const quick = cover.createDiv("qiaomu-reader-lib-quick");
+    const stopCard = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+    const quickAction = (label, iconName, run) => {
+      const action = quick.createDiv("qiaomu-reader-lib-action");
+      action.setAttribute("role", "button");
+      action.tabIndex = 0;
+      const mark = action.createSpan("qiaomu-reader-lib-action-icon");
+      svgIcon(mark, iconName);
+      const caption = action.createSpan({ cls: "qiaomu-reader-lib-action-label", text: label });
+      caption.id = `qbr-lib-action-${++this._libActionSeq}`;
+      action.setAttribute("aria-labelledby", caption.id);
+      let actedAt = 0;
+      const activate = (ev) => {
+        stopCard(ev);
+        const now = Date.now();
+        if (now - actedAt < 50) return;
+        actedAt = now;
+        run();
+      };
+      action.addEventListener("click", activate);
+      action.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter" && ev.key !== " ") return;
+        activate(ev);
+      });
+      return action;
+    };
+    quickAction(qiaomuReaderTranslate("library-continue"), "book-open", () => {
+      this.close();
+      void this.plugin.openFile(file);
+    });
+    if (noteCount > 0) {
+      quickAction(qiaomuReaderTranslate("library-view-notes"), "reading-note", () => { void this._openLibHighlights(file); });
+    }
+    let holdTimer = 0;
+    let holding = false;
+    const revealActions = () => {
+      holding = true;
+      card.addClass("is-actions-open");
+    };
+    card.addEventListener("pointerdown", (ev) => {
+      if (ev.pointerType === "mouse" || ev.button !== 0) return;
+      if (ev.target.closest(".qiaomu-reader-lib-action, .qiaomu-reader-lib-morebtn")) return;
+      window.clearTimeout(holdTimer);
+      holdTimer = window.setTimeout(revealActions, 450);
+    });
+    const cancelHold = () => { window.clearTimeout(holdTimer); };
+    card.addEventListener("pointerup", cancelHold);
+    card.addEventListener("pointercancel", cancelHold);
+    card.addEventListener("pointerleave", cancelHold);
+    card.addEventListener("click", (ev) => {
+      if (!holding) return;
+      holding = false;
+      ev.preventDefault();
+      ev.stopPropagation();
+    }, true);
     const openBook = () => {
       this.close();
       void this.plugin.openFile(file);
@@ -11620,7 +11674,7 @@ const LibraryModal = class extends Modal {
     menuBtn.setAttribute("aria-label", qiaomuReaderTranslate("book-actions"));
     svgIcon(menuBtn, "more");
     menuBtn.addEventListener("click", bookMenu);
-    card.addEventListener("click", ev => { if (!ev.target.closest("button")) openBook(); });
+    card.addEventListener("click", ev => { if (!ev.target.closest("button, .qiaomu-reader-lib-action")) openBook(); });
     card.addEventListener("keydown", ev => {
       if (ev.target === card && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openBook(); }
     });

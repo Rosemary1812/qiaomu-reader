@@ -30,6 +30,8 @@ export default {
 
   "library-with-highlights": "Mit Markierungen",
   "library-continue": "Weiterlesen",
+  "library-note-count": "{0} Notizen",
+  "library-view-notes": "Notizen ansehen",
   "library-highlight-count": "{0} Markierungen",
   "library-open-note": "Notiz öffnen",
   "library-create-note": "Notizen machen",

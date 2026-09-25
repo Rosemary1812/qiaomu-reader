@@ -32,6 +32,8 @@ export default {
 
   "library-with-highlights": "С выделениями",
   "library-continue": "Продолжить чтение",
+  "library-note-count": "Заметок: {0}",
+  "library-view-notes": "Открыть заметки",
   "library-highlight-count": "Выделений: {0}",
   "library-open-note": "Открыть заметку",
   "library-create-note": "Создать заметку",

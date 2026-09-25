@@ -1433,14 +1433,25 @@ button.qiaomu-reader-find-item.qiaomu-reader-toc-active { background: var(--back
 .qiaomu-reader-lib .qiaomu-reader-lib-ph-title { padding:0; font-family:Georgia,"Songti SC",serif; font-size:21px; text-align:left; width:100%; line-height:1.4; color:inherit; }
 .qiaomu-reader-lib .qiaomu-reader-lib-info { padding:12px 0 0; }
 .qiaomu-reader-lib .qiaomu-reader-lib-book-title { font-size:14px; line-height:1.45; margin:0 0 5px; overflow-wrap:anywhere; }
-.qiaomu-reader-lib .qiaomu-reader-lib-book-meta { font-size:11px; font-weight:400; letter-spacing:0; }
-.qiaomu-reader-lib .qiaomu-reader-lib-strip { height:3px; }
-.qiaomu-reader-lib .qiaomu-reader-lib-strip-fill { background:var(--qiaomu-reader-lib-muted); }
-.qiaomu-reader-lib .qiaomu-reader-lib-morebtn { top:6px; right:6px; width:28px; height:28px; border-radius:6px; background:var(--qiaomu-reader-lib-bg); color:var(--qiaomu-reader-lib-text); opacity:0; transform:none; }
-.qiaomu-reader-lib .qiaomu-reader-lib-card:hover button, .qiaomu-reader-lib .qiaomu-reader-lib-card:focus-within button { opacity:1; }
-.qiaomu-reader-lib-study { display:flex; flex-wrap:wrap; gap:2px 8px; margin-top:9px; }
-.qiaomu-reader-lib button.qiaomu-reader-lib-study-button { padding:3px 0; height:auto; min-height:28px; font-size:11px; background:none; box-shadow:none; border:0; color:var(--qiaomu-reader-lib-muted); }
-.qiaomu-reader-lib button.qiaomu-reader-lib-study-button:hover { color:var(--qiaomu-reader-lib-text); text-decoration:underline; text-underline-offset:3px; }
+.qiaomu-reader-lib .qiaomu-reader-lib-book-meta { font-size:12px; font-weight:400; letter-spacing:0; line-height:1.4; }
+.qiaomu-reader-lib-note-count { color:var(--interactive-accent, var(--qiaomu-reader-lib-accent, #3b6cff)); font-weight:600; }
+.qiaomu-reader-lib .qiaomu-reader-lib-strip { height:3px; z-index:4; }
+.qiaomu-reader-lib .qiaomu-reader-lib-strip-fill { background:#3b6cff; }
+.qiaomu-reader-lib .qiaomu-reader-lib-morebtn { top:8px; right:8px; width:32px; height:32px; border-radius:10px; background:rgba(255,255,255,.92); color:var(--qiaomu-reader-lib-text); border-color:transparent; opacity:1; transform:none; box-shadow:0 1px 4px rgba(0,0,0,.12); }
+.qiaomu-reader-lib-quick { position:absolute; inset:0; z-index:3; display:flex; align-items:center; justify-content:center; gap:10px; padding:16px; background:rgba(28,28,32,.42); opacity:0; pointer-events:none; transition:opacity .16s ease; }
+.qiaomu-reader-lib-action { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:40px; padding:0 14px; border-radius:12px; background:#fff; color:#1a1a1a; font-size:13px; font-weight:650; line-height:1; box-shadow:0 6px 18px rgba(0,0,0,.18); cursor:pointer; user-select:none; }
+.qiaomu-reader-lib-action-icon { display:flex; }
+.qiaomu-reader-lib-action-icon svg { width:16px; height:16px; }
+.qiaomu-reader-lib-action:hover { background:#f6f6f6; }
+.qiaomu-reader-lib-action:focus-visible { outline:2px solid #fff; outline-offset:3px; }
+.qiaomu-reader-lib-card:hover .qiaomu-reader-lib-quick,
+.qiaomu-reader-lib-card:focus-within .qiaomu-reader-lib-quick,
+.qiaomu-reader-lib-card.is-actions-open .qiaomu-reader-lib-quick { opacity:1; pointer-events:auto; }
+@media (hover:none) {
+  .qiaomu-reader-lib-card:hover .qiaomu-reader-lib-quick { opacity:0; pointer-events:none; }
+  .qiaomu-reader-lib-card:focus-within .qiaomu-reader-lib-quick,
+  .qiaomu-reader-lib-card.is-actions-open .qiaomu-reader-lib-quick { opacity:1; pointer-events:auto; }
+}
 .qiaomu-reader-lib-resume { grid-column:1/-1; display:flex; align-items:center; gap:24px; padding:18px 20px; margin-bottom:2px; border:1px solid var(--qiaomu-reader-lib-border); border-radius:10px; background:color-mix(in srgb,var(--qiaomu-reader-lib-text) 2%,var(--qiaomu-reader-lib-bg)); }
 .qiaomu-reader-lib-resume-copy { flex:1; min-width:0; }
 .qiaomu-reader-lib-resume-label { font-size:11px; color:var(--qiaomu-reader-lib-muted); margin-bottom:6px; }
@@ -1456,7 +1467,8 @@ button.qiaomu-reader-find-item.qiaomu-reader-toc-active { background: var(--back
   .qiaomu-reader-lib-resume { padding:14px; gap:12px; flex-wrap:wrap; }
   .qiaomu-reader-lib-resume-copy { flex-basis:100%; }
   .qiaomu-reader-lib .qiaomu-reader-lib-ph-title { font-size:18px; padding-bottom:8px; }
-  .qiaomu-reader-lib .qiaomu-reader-lib-study-button { min-height:36px; }
+  .qiaomu-reader-lib-quick { flex-direction:column; gap:8px; }
+  .qiaomu-reader-lib-action { width:100%; max-width:148px; }
 }
 @media (hover:none) {
   .qiaomu-reader-lib .qiaomu-reader-lib-morebtn { opacity:1; }

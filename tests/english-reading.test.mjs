@@ -107,6 +107,11 @@ test("reader viewport maps into expanded iframe coordinates", () => {
   assert.deepEqual(englishGlossViewport(dom.window.document, area), { left: 1000, right: 2000, top: 50, bottom: 650 });
 });
 
+test("gloss refresh tolerates a chapter iframe that was already detached", () => {
+  const area = { getBoundingClientRect: () => ({ left: 20, right: 620, top: 30, bottom: 830, width: 600, height: 800 }) };
+  assert.deepEqual(englishGlossViewport({ defaultView: null }, area), { left: 0, right: 600, top: 0, bottom: 800 });
+});
+
 test("missing dictionary entries do not consume the visible gloss limit", async () => {
   const dom = new JSDOM("<html><body><p>aberrant ameliorate</p></body></html>");
   const { document: doc } = dom.window;

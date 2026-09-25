@@ -248,8 +248,13 @@ export class ContinuousEpubRenderer extends HTMLElement {
         if (record.doc) this.dispatchEvent(new CustomEvent("unload", { detail: { doc: record.doc, index } }));
         const above = record.element.getBoundingClientRect().bottom <= this.#scroller.getBoundingClientRect().top;
         const height = record.element.offsetHeight;
+        // Removing a tall section can make the browser clamp scrollTop to the
+        // new, shorter scroll range immediately. Read the old position first;
+        // otherwise subtracting from the already-clamped value moves the
+        // viewport backwards and can make a just-pruned cover load again.
+        const scrollTop = this.#scroller.scrollTop;
         record.element.remove();
-        if (above) this.#scroller.scrollTop -= height;
+        if (above) this.#scroller.scrollTop = Math.max(0, scrollTop - height);
         const section = this.#book?.sections[index];
         const unload = () => { try { section?.unload?.(); } catch { /* book may be closing */ } };
         if (pending) void pending.then(unload, unload);
