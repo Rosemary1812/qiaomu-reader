@@ -150,7 +150,7 @@ img.qiaomu-reader-pdf-lazy:not([data-loaded="1"]) { background:color-mix(in srgb
 .qiaomu-reader-toc-list { display:flex; flex-direction:column; padding-bottom:40px; }
 .qiaomu-reader-toc-item { padding:12px 18px; font-family:'Inter',system-ui,sans-serif; font-size:13px; color:var(--qiaomu-reader-text); opacity:.75; cursor:pointer; border-bottom:1px solid rgba(0,0,0,.05); line-height:1.5; transition:background .13s,opacity .13s; }
 .qiaomu-reader-toc-item:hover { background:rgba(0,0,0,.04); opacity:1; }
-.qiaomu-reader-toc-item.active { color:var(--qiaomu-reader-accent); opacity:1; font-weight:600; }
+.qiaomu-reader-toc-item.active { color:var(--qiaomu-reader-accent); opacity:1; font-weight:600; background:color-mix(in srgb,var(--qiaomu-reader-accent) 12%,transparent); }
 .qiaomu-reader-toc-empty { padding:48px 20px; text-align:center; font-family:'Inter',system-ui,sans-serif; font-size:13px; color:var(--qiaomu-reader-muted); opacity:.7; }
 
 /* ── Library: modal shell, header, grid, cards ───────────────────────────── */

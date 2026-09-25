@@ -1074,20 +1074,7 @@ function vimNavBookEdge(view, end) {
 function vimNavChapter(view, dir) {
   const items = view.tocItems || [];
   if (!items.length) return;
-  let idx = -1;
-  if (view.engine) {
-    const loc = view.engine.currentLocation() || view._engineLocation;
-    const href = loc?.tocItem?.href;
-    const label = loc?.tocItem?.label;
-    if (href) idx = items.findIndex((it) => it.href === href);
-    if (idx < 0 && label) idx = items.findIndex((it) => it.label === label);
-  } else {
-    const block = typeof view.pager?.currentBlockIndex === "function" ? view.pager.currentBlockIndex() : 0;
-    for (let i = 0; i < items.length; i++) {
-      if (typeof items[i].block === "number" && items[i].block <= block) idx = i;
-      else if (typeof items[i].block === "number" && items[i].block > block) break;
-    }
-  }
+  const idx = currentTocIndex(view, items);
   const next = idx + (dir === "next" ? 1 : -1);
   if (next < 0 || next >= items.length) return;
   const item = items[next];
@@ -3696,6 +3683,7 @@ function updateEngineLocation(view, detail) {
   if (view.pbarFill) view.pbarFill.style.width = `${pct}%`;
   view.pctEl?.setText(`${pct}%`);
   view.locEl?.setText(detail.tocItem?.label || qiaomuReaderTranslate("reading-position"));
+  if (view.panelOpen === "toc" && view._tocRender) view._tocRender();
   syncReaderAiCapability(view);
   if (!view._openingBook) {
     syncOpenAiReaderContext(view);
@@ -7262,9 +7250,11 @@ function buildTocPanelFor(view, panel, { close, jump: openItem }) {
   const list = panel.createDiv("qiaomu-reader-toc-list");
   const redraw = () => {
     list.empty();
-    const activeSpread = view.pager ? view.pager.spread : 0;
+    const current = currentTocIndex(view, entries);
     let visible = 0;
-    for (const entry of entries) {
+    let currentNode = null;
+    for (let index = 0; index < entries.length; index++) {
+      const entry = entries[index];
       if (filterText && !entry.label.toLowerCase().includes(filterText)) continue;
       visible++;
       const node = list.createDiv("qiaomu-reader-toc-item");
@@ -7276,13 +7266,18 @@ function buildTocPanelFor(view, panel, { close, jump: openItem }) {
       if (typeof spread === "number") meta.push(qiaomuReaderTranslate("spr-0", spread + 1));
       if (meta.length) row.createSpan({ cls: "qiaomu-reader-toc-where", text: meta.join(" \xB7 ") });
       if (entry.level) node.style.paddingLeft = `${8 + entry.level * 12}px`;
-      if (typeof spread === "number" && spread === activeSpread) node.addClass("active");
+      if (index === current) {
+        node.addClass("active");
+        node.setAttribute("aria-current", "true");
+        currentNode = node;
+      }
       node.addEventListener("click", () => {
         close();
         openItem(entry);
       });
     }
     if (!visible) list.createDiv("qiaomu-reader-toc-empty").setText(qiaomuReaderTranslate("nothing-found"));
+    else if (currentNode && view.panelOpen === "toc") currentNode.scrollIntoView({ block: "nearest" });
   };
   redraw();
   return redraw;
@@ -7295,6 +7290,53 @@ function chapterForBlock(toc, block) {
     else break;
   }
   return best;
+}
+function tocHrefKey(href) {
+  try { return decodeURIComponent(String(href || "").split("#")[0]).replace(/^\.\//, ""); }
+  catch { return String(href || "").split("#")[0].replace(/^\.\//, ""); }
+}
+function currentTocIndex(view, entries) {
+  if (!view || !entries?.length) return -1;
+  if (view.engine) {
+    const loc = view.engine.currentLocation?.() || view._engineLocation;
+    const href = loc?.tocItem?.href;
+    const label = loc?.tocItem?.label;
+    if (href) {
+      const exact = entries.findIndex((entry) => entry.href === href);
+      if (exact >= 0) return exact;
+      const key = tocHrefKey(href);
+      const sameFile = entries
+        .map((entry, index) => ({ entry, index }))
+        .filter(({ entry }) => tocHrefKey(entry.href) === key);
+      if (sameFile.length === 1) return sameFile[0].index;
+      if (sameFile.length > 1) {
+        const range = loc?.range;
+        const doc = range?.startContainer?.ownerDocument || range?.startContainer;
+        let reached = sameFile[0].index;
+        if (doc?.getElementById && typeof range?.comparePoint === "function") {
+          for (const { entry, index } of sameFile) {
+            const id = String(entry.href || "").split("#")[1];
+            if (!id) continue;
+            let el = null;
+            try { el = doc.getElementById(decodeURIComponent(id)); } catch { el = doc.getElementById(id); }
+            if (!el) continue;
+            try { if (range.comparePoint(el, 0) <= 0) reached = index; else break; }
+            catch { /* a point outside this document cannot order the anchors */ }
+          }
+        }
+        return reached;
+      }
+    }
+    if (label) return entries.findIndex((entry) => entry.label === label);
+    return -1;
+  }
+  const block = typeof view.pager?.currentBlockIndex === "function" ? view.pager.currentBlockIndex() : (view._readingAnchor?.block ?? 0);
+  let index = -1;
+  for (let i = 0; i < entries.length; i++) {
+    if (typeof entries[i].block === "number" && entries[i].block <= block) index = i;
+    else if (typeof entries[i].block === "number" && entries[i].block > block) break;
+  }
+  return index;
 }
 function pageForBlock(flow, block) {
   try {
@@ -12367,6 +12409,7 @@ const ReaderModal = class extends Modal {
     this.tocPan.classList.toggle("qiaomu-reader-panel-open", name === "toc");
     this.hlPan.classList.toggle("qiaomu-reader-panel-open", name === "highlights");
     if (this.findPan) this.findPan.classList.toggle("qiaomu-reader-panel-open", name === "find");
+    if (name === "toc" && this._tocRender) this._tocRender();
     this.overlayEl.classList.add("qiaomu-reader-overlay-on");
   }
   _closePanel() {

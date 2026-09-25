@@ -121,6 +121,70 @@ test("history filtering never replaces Obsidian Modal's keyboard scope", () => {
   assert.equal(modal.filterScope, "book");
 });
 
+test("contents marks the chapter under the reading position and scrolls it into view", () => {
+  const { window } = new JSDOM("<section></section>");
+  const proto = window.HTMLElement.prototype;
+  proto.createEl = function(tag, options = {}) {
+    const el = window.document.createElement(tag);
+    if (typeof options === "string") el.className = options;
+    else { el.className = options.cls || ""; el.textContent = options.text || ""; for (const [key, val] of Object.entries(options.attr || {})) el.setAttribute(key, val); }
+    this.appendChild(el); return el;
+  };
+  proto.createDiv = function(options) { return this.createEl("div", options); };
+  proto.createSpan = function(options) { return this.createEl("span", options); };
+  proto.empty = function() { this.replaceChildren(); };
+  proto.setText = function(text) { this.textContent = text; };
+  proto.addClass = function(value) { this.classList.add(value); };
+  let scrolled = 0;
+  proto.scrollIntoView = function() { scrolled++; };
+  const code = source.slice(source.indexOf("function prepareNavigationPanel("), source.indexOf("function pageForBlock("));
+  const build = vm.runInNewContext(`${code}; buildTocPanelFor`, { window, qiaomuReaderTranslate: (key) => key });
+  const panel = window.document.querySelector("section");
+  const entries = [
+    { label: "第三十三章", href: "c33" },
+    { label: "第三十五章", href: "c35" },
+    { label: "第三十七章", href: "c37" },
+  ];
+  const view = {
+    panelOpen: "toc",
+    tocItems: entries,
+    engine: { currentLocation: () => ({ tocItem: { href: "c35", label: "第三十五章" } }) },
+  };
+  const redraw = build(view, panel, { close() {}, jump() {} });
+  const active = panel.querySelector(".qiaomu-reader-toc-item.active");
+  assert.equal(active?.querySelector(".qiaomu-reader-toc-label")?.textContent, "第三十五章");
+  assert.equal(active?.getAttribute("aria-current"), "true");
+  assert.equal(scrolled, 1);
+  view.engine.currentLocation = () => ({ tocItem: { href: "c37", label: "第三十七章" } });
+  redraw();
+  assert.equal(panel.querySelector(".qiaomu-reader-toc-item.active .qiaomu-reader-toc-label")?.textContent, "第三十七章");
+  const paged = {
+    panelOpen: null,
+    tocItems: [{ label: "第七章", block: 12 }, { label: "第八章", block: 40 }],
+    pager: { currentBlockIndex: () => 20, spreadForBlock: (block) => block < 40 ? 3 : 8 },
+  };
+  build(paged, panel, { close() {}, jump() {} });
+  assert.equal(panel.querySelector(".qiaomu-reader-toc-item.active .qiaomu-reader-toc-label")?.textContent, "第七章");
+  assert.equal(scrolled, 2);
+  const doc = new window.DOMParser().parseFromString("<html><body><h1 id='a'>第三十三章</h1><h1 id='b'>第三十四章</h1><p id='here'>正文</p></body></html>", "text/html");
+  const here = doc.getElementById("here");
+  const range = doc.createRange();
+  range.setStart(here, 0);
+  range.setEnd(here, 0);
+  const anchored = {
+    panelOpen: "toc",
+    tocItems: [
+      { label: "第三十三章", href: "text/part.xhtml#a" },
+      { label: "第三十四章", href: "text/part.xhtml#b" },
+      { label: "第三十五章", href: "text/next.xhtml" },
+    ],
+    engine: { currentLocation: () => ({ tocItem: { href: "text/part.xhtml", label: "第三十三章" }, range }) },
+  };
+  build(anchored, panel, { close() {}, jump() {} });
+  assert.equal(panel.querySelector(".qiaomu-reader-toc-item.active .qiaomu-reader-toc-label")?.textContent, "第三十四章");
+  window.close();
+});
+
 test("real search controller handles IME, wraps hits, preserves one return point and restores focus", () => {
   const { window } = new JSDOM("<button id='trigger'></button><section></section>");
   const proto = window.HTMLElement.prototype;
