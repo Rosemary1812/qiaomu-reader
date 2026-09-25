@@ -1537,6 +1537,8 @@ const QiaomuBookReader = class extends Plugin {
       || this.app.isMobile || view.containerEl.ownerDocument.defaultView.innerWidth < 1000
       || this.settings.aiCompanionVisible === false || this.app.workspace.activeLeaf !== view.leaf) return;
     if (this._companionWasVisible && !this.app.workspace.rightSplit?.collapsed) return;
+    // Qiaomu Agent answers this reader's questions: do not open an unused built-in AI panel beside it.
+    if (this._agentAnswers?.()) return;
     this._openingCompanion = true;
     try { await this.openAiChat(readerAiPanelContext(view), { automatic: true }); }
     catch (error) { console.warn("Qiaomu Reader: companion could not open", error); }
@@ -1780,9 +1782,7 @@ const QiaomuBookReader = class extends Plugin {
   /** True when Qiaomu Agent took the question: chosen in settings, or while the built-in AI is not set up. */
   async _answerWithAgent(context, options = {}) {
     const agent = options.automatic ? null : findAgent(this.app);
-    if (!agent || !context?.bookFile) return false;
-    const state = aiSetupState(this);
-    if (!shouldUseAgent(this.settings.aiAssistant, { builtinReady: state.ready && state.enabled, agentAvailable: true })) return false;
+    if (!agent || !context?.bookFile || !this._agentAnswers()) return false;
     try {
       return await askAgentFromReader(this, agent, context);
     } catch (error) {
@@ -1792,6 +1792,11 @@ const QiaomuBookReader = class extends Plugin {
     }
   }
   qiaomuAgentAvailable() { return findAgent(this.app) !== null; }
+  /** Whether Ask AI currently goes to Qiaomu Agent instead of the built-in AI. */
+  _agentAnswers() {
+    const state = aiSetupState(this);
+    return shouldUseAgent(this.settings.aiAssistant, { builtinReady: state.ready && state.enabled, agentAvailable: this.qiaomuAgentAvailable() });
+  }
   async openAiChat(context = null, options = {}) {
     let target = null;
     if (!context) {

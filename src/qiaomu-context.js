@@ -8,6 +8,9 @@
 // - Qiaomu Agent sets `plugin.api = { protocol: "qiaomu-agent", version, ask({ context, prompt }) }`.
 // - A source triggers CONTEXT_CHANGED_EVENT on the workspace when its page or selection changes.
 //
+// Versioning: version 1 may gain optional fields and optional methods; check for them before use and
+// ignore unknown ones. Only a breaking change raises the version, and a mismatch reads as "absent".
+//
 // A snapshot is { sourceId, sourceName, kind: "article"|"book"|"document"|"page"|"other", title,
 // url?, path?, author?, published?, location?, text?, truncated?, selection?: { text, location? } }.
 
