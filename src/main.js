@@ -4620,6 +4620,10 @@ async function refreshEnglishGlosses(view, doc) {
   if (!view.plugin.settings.englishGlossEnabled) return;
   const content = view.engine?.contents().find(item => item.doc === doc);
   if (!content) return;
+  const frameRect = doc.defaultView?.frameElement?.getBoundingClientRect();
+  const areaRect = view.areaEl.getBoundingClientRect();
+  if (frameRect && (frameRect.bottom <= areaRect.top || frameRect.top >= areaRect.bottom
+    || frameRect.right <= areaRect.left || frameRect.left >= areaRect.right)) return;
   if (!view._englishGlossLayers) view._englishGlossLayers = new WeakMap();
   let layer = view._englishGlossLayers.get(doc);
   if (!layer) { layer = createEnglishGlossLayer(doc, content.overlayer); view._englishGlossLayers.set(doc, layer); }

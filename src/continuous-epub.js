@@ -53,8 +53,9 @@ export class ContinuousEpubRenderer extends HTMLElement {
         this.#scroller.addEventListener("scroll", () => {
             this.dispatchEvent(new Event("scroll"));
             if (this.#settingPosition) return;
-            this.ownerDocument.defaultView?.clearTimeout(this.#scrollTimer);
+            if (this.#scrollTimer !== null) return;
             this.#scrollTimer = this.ownerDocument.defaultView?.setTimeout(() => {
+                this.#scrollTimer = null;
                 this.#relocate("scroll");
                 void this.#maintainWindow();
             }, 100);
@@ -187,7 +188,7 @@ export class ContinuousEpubRenderer extends HTMLElement {
                 if (room > 1 && (delta > 0 ? el.scrollTop < room - 1 : el.scrollTop > 1)) return;
             }
             event.preventDefault();
-            this.#scroller.scrollTop += delta;
+            void this.#scrollDistance(delta, false).catch(error => console.warn("Qiaomu Reader: wheel scroll failed", error));
         }, { passive: false });
         let lastY = null;
         doc.addEventListener("touchstart", event => {
@@ -202,7 +203,7 @@ export class ContinuousEpubRenderer extends HTMLElement {
             lastY = y;
             if (Math.abs(delta) < 1) return;
             event.preventDefault();
-            this.#scroller.scrollTop += delta;
+            void this.#scrollDistance(delta, false).catch(error => console.warn("Qiaomu Reader: touch scroll failed", error));
         }, { passive: false });
         doc.addEventListener("touchend", () => { lastY = null; }, { passive: true });
         doc.addEventListener("touchcancel", () => { lastY = null; }, { passive: true });
@@ -213,8 +214,8 @@ export class ContinuousEpubRenderer extends HTMLElement {
                 : event.key === " " ? (event.shiftKey ? -1 : 1) : 0;
             if (!direction) return;
             event.preventDefault();
-            this.#scroller.scrollTop += direction * (event.key === " "
-                ? this.#scroller.clientHeight * .85 : 48);
+            void this.#scrollDistance(direction * (event.key === " "
+                ? this.#scroller.clientHeight * .85 : 48), false).catch(error => console.warn("Qiaomu Reader: key scroll failed", error));
         });
     }
 
@@ -294,7 +295,7 @@ export class ContinuousEpubRenderer extends HTMLElement {
         if (!this.#book || !this.#records.size) return;
         const pass = ++this.#windowPass;
         const active = sectionAtOffset(this.#orderedRecords(), this.#scroller.scrollTop + 28);
-        if (!active) return;
+        if (!active?.doc) return;
         const previous = adjacentReadableSection(this.#book.sections, active.index, -1);
         const next = adjacentReadableSection(this.#book.sections, active.index, 1);
         try {
@@ -359,28 +360,41 @@ export class ContinuousEpubRenderer extends HTMLElement {
         }));
     }
 
+    async #scrollDistance(distance, report = true) {
+        const direction = Math.sign(distance);
+        let remaining = Math.abs(distance);
+        const generation = this.#generation;
+        const sections = this.#book?.sections ?? [];
+        for (let loaded = 0; remaining > .001 && loaded <= sections.length; loaded++) {
+            const before = this.#scroller.scrollTop;
+            this.#scroller.scrollTop += direction * remaining;
+            remaining -= Math.abs(this.#scroller.scrollTop - before);
+            if (remaining <= .001) break;
+            const records = this.#orderedRecords().filter(record => record.doc);
+            const edge = direction > 0 ? records.at(-1) : records[0];
+            const adjacent = edge && adjacentReadableSection(sections, edge.index, direction);
+            if (adjacent === null || adjacent === undefined) break;
+            const record = await this.#ensure(adjacent);
+            if (!record || generation !== this.#generation) return;
+        }
+        if (report) {
+            this.#relocate("scroll");
+            void this.#maintainWindow();
+        }
+    }
+
     async next(distance) {
-        const current = sectionAtOffset(this.#orderedRecords(), this.#scroller.scrollTop + 28);
-        if (!current) {
+        if (!this.#records.size) {
             const first = this.#book?.sections.findIndex(section => section?.linear !== "no") ?? -1;
             if (first >= 0) await this.goTo({ index: first, anchor: 0 });
             return;
         }
-        const next = adjacentReadableSection(this.#book.sections, current.index, 1);
-        if (next !== null) await this.#ensure(next);
-        this.#scroller.scrollTop += distance ?? this.#scroller.clientHeight * .85;
-        this.#relocate("scroll");
-        void this.#maintainWindow();
+        await this.#scrollDistance(distance ?? this.#scroller.clientHeight * .85);
     }
 
     async prev(distance) {
-        const current = sectionAtOffset(this.#orderedRecords(), this.#scroller.scrollTop + 28);
-        if (!current) return;
-        const previous = adjacentReadableSection(this.#book.sections, current.index, -1);
-        if (previous !== null) await this.#ensure(previous);
-        this.#scroller.scrollTop -= distance ?? this.#scroller.clientHeight * .85;
-        this.#relocate("scroll");
-        void this.#maintainWindow();
+        if (!this.#records.size) return;
+        await this.#scrollDistance(-(distance ?? this.#scroller.clientHeight * .85));
     }
 
     async scrollBy(dx, dy) {

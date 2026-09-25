@@ -25,6 +25,7 @@ async function rendererFixture() {
       const paragraph = doc.createElement("p");
       paragraph.textContent = decodeURIComponent(value.split(",")[1]).match(/<p>([\s\S]*)<\/p>/)?.[1] || "";
       doc.body.append(paragraph);
+      Object.defineProperty(doc, "_frame", { value: this });
       Object.defineProperty(this, "contentDocument", { configurable: true, value: doc });
       queueMicrotask(() => this.dispatchEvent(new window.Event("load")));
     },
@@ -108,6 +109,96 @@ test("continuous EPUB scroll keeps adjacent chapters in one flow and unloads dis
     assert.deepEqual(Array.from(renderer.getContents(), item => item.index), [1, 2, 4]);
     assert.ok(sections[0].unloads >= 1, "distant sections release their resources");
   } finally { renderer.destroy(); dom.window.close(); }
+});
+
+test("downward wheel movement waits for a loading chapter instead of disappearing", async () => {
+  const { dom, ContinuousEpubRenderer } = await rendererFixture();
+  let releaseNext;
+  const nextSource = new Promise(resolve => { releaseNext = resolve; });
+  const sections = [
+    { linear: "yes", load: async () => "data:text/html,<p>First</p>", unload() {} },
+    { linear: "yes", load: () => nextSource, unload() {} },
+  ];
+  const renderer = new ContinuousEpubRenderer();
+  renderer.addEventListener("load", ({ detail: { doc } }) => {
+    Object.defineProperty(doc.body, "scrollHeight", { configurable: true, get: () => 184 });
+    doc.body.getBoundingClientRect = () => ({ bottom: 212 });
+  });
+  dom.window.document.querySelector("main").append(renderer);
+  renderer.open({ sections });
+  try {
+    await renderer.goTo({ index: 0, anchor: 0 });
+    const doc = renderer.getContents()[0].doc;
+    const scroller = doc._frame.parentElement.parentElement.parentElement;
+    let top = 0;
+    Object.defineProperty(scroller, "scrollTop", { configurable: true,
+      get: () => top,
+      set(value) { top = Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight)); },
+    });
+    doc.body.dispatchEvent(new dom.window.WheelEvent("wheel", { deltaY: 100, bubbles: true, cancelable: true }));
+    assert.equal(scroller.scrollTop, 0, "the current loaded content has no room to scroll");
+    releaseNext("data:text/html,<p>Second</p>");
+    await until(() => scroller.scrollTop === 100);
+    assert.equal(renderer.getContents().length, 2);
+  } finally { renderer.destroy(); dom.window.close(); }
+});
+
+test("upward wheel movement still enters a loading previous chapter", async () => {
+  const { dom, ContinuousEpubRenderer } = await rendererFixture();
+  let releasePrevious;
+  const previousSource = new Promise(resolve => { releasePrevious = resolve; });
+  const sections = [
+    { linear: "yes", load: () => previousSource, unload() {} },
+    { linear: "yes", load: async () => "data:text/html,<p>Second</p>", unload() {} },
+  ];
+  const renderer = new ContinuousEpubRenderer();
+  renderer.addEventListener("load", ({ detail: { doc } }) => {
+    Object.defineProperty(doc.body, "scrollHeight", { configurable: true, get: () => 184 });
+    doc.body.getBoundingClientRect = () => ({ bottom: 212 });
+  });
+  dom.window.document.querySelector("main").append(renderer);
+  renderer.open({ sections });
+  try {
+    await renderer.goTo({ index: 1, anchor: 0 });
+    const doc = renderer.getContents()[0].doc;
+    const scroller = doc._frame.parentElement.parentElement.parentElement;
+    let top = 0;
+    Object.defineProperty(scroller, "scrollTop", { configurable: true,
+      get: () => top,
+      set(value) { top = Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight)); },
+    });
+    doc.body.dispatchEvent(new dom.window.WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true }));
+    releasePrevious("data:text/html,<p>First</p>");
+    await until(() => renderer.getContents().length === 2);
+    assert.ok(scroller.scrollTop < 180, "the gesture moves into the previous chapter");
+  } finally { renderer.destroy(); dom.window.close(); }
+});
+
+test("continuous scrolling preloads the following chapter before the user pauses", async () => {
+  const { dom, ContinuousEpubRenderer } = await rendererFixture();
+  const sections = Array.from({ length: 4 }, (_, index) => ({
+    linear: "yes", load: async () => `data:text/html,<p>Chapter ${index}</p>`, unload() {},
+  }));
+  const renderer = new ContinuousEpubRenderer();
+  renderer.addEventListener("load", ({ detail: { doc } }) => {
+    Object.defineProperty(doc.body, "scrollHeight", { configurable: true, get: () => 184 });
+    doc.body.getBoundingClientRect = () => ({ bottom: 212 });
+  });
+  dom.window.document.querySelector("main").append(renderer);
+  renderer.open({ sections });
+  let scrollEvents;
+  try {
+    await renderer.goTo({ index: 0, anchor: 0 });
+    await until(() => renderer.getContents().length === 2);
+    const scroller = renderer.getContents()[0].doc._frame.parentElement.parentElement.parentElement;
+    scroller.scrollTop = 300;
+    scrollEvents = globalThis.setInterval(() => scroller.dispatchEvent(new dom.window.Event("scroll")), 15);
+    await new Promise(resolve => globalThis.setTimeout(resolve, 160));
+    assert.ok(renderer.getContents().some(item => item.index === 2), "the next chapter loads during continuous input");
+  } finally {
+    globalThis.clearInterval(scrollEvents);
+    renderer.destroy(); dom.window.close();
+  }
 });
 
 test("Foliate View keeps CFI progress while using the continuous renderer", async () => {

@@ -143,10 +143,21 @@ function isVisibleRect(rect, viewport) {
 
 export function visibleEnglishWords(doc, level, limit = 28, viewport = englishGlossViewport(doc), dictionary = null) {
   const found = [], seen = new Set();
+  const parentRects = new WeakMap();
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const parent = node.parentElement;
       if (!parent || parent.closest("script,style,code,pre,a,button,svg,ruby,.qiaomu-english-gloss-host")) return NodeFilter.FILTER_REJECT;
+      let rect = parentRects.get(parent);
+      if (!rect) {
+        rect = parent.getBoundingClientRect();
+        parentRects.set(parent, rect);
+      }
+      // A long EPUB chapter can contain thousands of words before the visible
+      // paragraph. Avoid creating a Range and looking up each offscreen word.
+      // Zero-size boxes (including jsdom and unusual EPUB markup) use the
+      // precise word check below instead.
+      if (rect.width > 0 && rect.height > 0 && !isVisibleRect(rect, viewport)) return NodeFilter.FILTER_REJECT;
       return /[A-Za-z]{3}/.test(node.textContent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
     },
   });

@@ -81,6 +81,25 @@ test("gloss candidates skip earlier columns in an expanded iframe", () => {
   assert.deepEqual(visibleEnglishWords(doc, "B1", 1, currentPage).map(item => item.word), ["ubiquitous"]);
 });
 
+test("gloss lookup skips word geometry in offscreen paragraphs", () => {
+  const dom = new JSDOM(`<html><body>${"<p>ameliorate ubiquitous</p>".repeat(100)}<p>ameliorate</p></body></html>`);
+  const { document: doc } = dom.window;
+  globalThis.NodeFilter = dom.window.NodeFilter;
+  const paragraphs = [...doc.querySelectorAll("p")];
+  for (const paragraph of paragraphs) paragraph.getBoundingClientRect = () =>
+    paragraph === paragraphs.at(-1)
+      ? { left: 20, right: 200, top: 60, bottom: 80, width: 180, height: 20 }
+      : { left: 20, right: 200, top: -200, bottom: -180, width: 180, height: 20 };
+  let wordMeasurements = 0;
+  dom.window.Range.prototype.getBoundingClientRect = () => {
+    wordMeasurements++;
+    return { left: 20, right: 90, top: 60, bottom: 80, width: 70 };
+  };
+  const viewport = { left: 0, right: 300, top: 0, bottom: 100 };
+  assert.deepEqual(visibleEnglishWords(doc, "B1", 1, viewport).map(item => item.word), ["ameliorate"]);
+  assert.equal(wordMeasurements, 1);
+});
+
 test("reader viewport maps into expanded iframe coordinates", () => {
   const dom = new JSDOM("<html><body></body></html>");
   Object.defineProperty(dom.window, "frameElement", { value: { getBoundingClientRect: () => ({ left: -1000, top: 50 }) } });
