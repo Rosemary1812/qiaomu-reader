@@ -5,6 +5,7 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { JSDOM } from 'jsdom';
 import { footnotePdfBytes } from './fixtures/pdf-footnotes.mjs';
 import { pdfPageShell } from '../src/pdf-page-mode.js';
+import { getPdfTextContent } from '../src/pdf-text-content.js';
 
 test('PDF superscript references and footnotes preserve original page geometry', async () => {
   const task = getDocument({ data: footnotePdfBytes(), isEvalSupported: false, useSystemFonts: true });
@@ -35,4 +36,35 @@ test('PDF superscript references and footnotes preserve original page geometry',
   } finally {
     await task.destroy();
   }
+});
+
+test('PDF text extraction works when Safari lacks ReadableStream async iteration', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(ReadableStream.prototype, Symbol.asyncIterator);
+  const task = getDocument({ data: footnotePdfBytes(), isEvalSupported: false, useSystemFonts: true });
+  try {
+    assert.equal(delete ReadableStream.prototype[Symbol.asyncIterator], true);
+    const pdf = await task.promise;
+    const page = await pdf.getPage(1);
+
+    await assert.rejects(page.getTextContent(), /async iterable|not a function/i);
+    const text = await getPdfTextContent(page);
+
+    assert.ok(text.items.some((item) => item.str === 'Text before'));
+    assert.ok(text.items.some((item) => item.str.includes('This footnote')));
+  } finally {
+    if (descriptor) Object.defineProperty(ReadableStream.prototype, Symbol.asyncIterator, descriptor);
+    await task.destroy();
+  }
+});
+
+test('PDF text compatibility reader preserves XFA handling in PDF.js', async () => {
+  const expected = { items: [{ str: 'XFA' }], styles: {}, lang: null };
+  let streamCalls = 0;
+  const page = {
+    isPureXfa: true,
+    async getTextContent() { return expected; },
+    streamTextContent() { streamCalls += 1; },
+  };
+  assert.equal(await getPdfTextContent(page), expected);
+  assert.equal(streamCalls, 0);
 });

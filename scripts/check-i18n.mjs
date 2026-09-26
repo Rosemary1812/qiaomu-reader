@@ -16,13 +16,13 @@ function placeholders(value) {
   return [...String(value).matchAll(/\{[^{}\n]+\}/g)].map((match) => match[0]).sort();
 }
 
-function translatedLiterals(code) {
+function translatedLiterals(code, txArgument = 0) {
   const ast = parse(code, { ecmaVersion: "latest", sourceType: "module" });
   const values = new Set();
   const visit = (node) => {
     if (!node || typeof node !== "object") return;
     if (node.type === "CallExpression" && node.callee?.type === "Identifier" && (node.callee.name === "qiaomuReaderTranslate" || node.callee.name === "tx")) {
-      const arg = node.callee.name === "tx" ? node.arguments?.[1] : node.arguments?.[0];
+      const arg = node.callee.name === "tx" ? node.arguments?.[txArgument] : node.arguments?.[0];
       if (arg?.type === "Literal" && typeof arg.value === "string") values.add(arg.value);
     }
     for (const value of Object.values(node)) {
@@ -38,7 +38,7 @@ const english = QIAOMU_READER_EN;
 const isChineseSource = (key) => /[\u3400-\u9fff]/.test(key);
 const chineseValue = (key) => isChineseSource(key) ? key : QIAOMU_READER_ZH_CN[key];
 const missing = Object.keys(english).filter((key) => !isChineseSource(key) && (QIAOMU_READER_ZH_CN[key] == null || QIAOMU_READER_ZH_CN[key] === ""));
-const usedLiterals = [...new Set([...translatedLiterals(source), ...translatedLiterals(calibreModalSource), ...AI_PROVIDER_CATEGORIES.map((c) => c.label),
+const usedLiterals = [...new Set([...translatedLiterals(source), ...translatedLiterals(calibreModalSource, 1), ...AI_PROVIDER_CATEGORIES.map((c) => c.label),
   ...Object.values(AI_PROVIDERS).flatMap((p) => [p.label, p.description]).filter((value) => /[\u3400-\u9fffА-Яа-яЁё]/.test(value))])];
 const missingUsedEnglish = usedLiterals.filter((key) => english[key] == null);
 const missingUsedChinese = usedLiterals.filter((key) => !isChineseSource(key) && (QIAOMU_READER_ZH_CN[key] == null || QIAOMU_READER_ZH_CN[key] === ""));

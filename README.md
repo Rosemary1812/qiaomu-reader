@@ -37,6 +37,7 @@ Qiaomu Reader 是中文优先的 Obsidian EPUB、PDF、FB2、MOBI、AZW3 和 CBZ
 | 回答成为笔记 | 保存完整 AI 回答，本地提取可修改标题；独立保存或追加到本书笔记 |
 | 少打断的交互 | 快捷问题直接可见；草稿按书落盘；专注阅读保留右侧 AI，不带回左侧文件树 |
 | 自选 AI 服务 | 保留自定义提示词；支持 CLI / ACP、国产模型、OpenAI 兼容接口及本地模型 |
+| 起点页接续 | 装了[乔木Home](https://github.com/joeseesun/qiaomu-home)时，主页显示在读的书（封面、进度），点击回到上次位置；主页搜索框也能搜书名 |
 
 ## 功能导览
 
@@ -47,6 +48,7 @@ Qiaomu Reader 是中文优先的 Obsidian EPUB、PDF、FB2、MOBI、AZW3 和 CBZ
 **桌面端可以从本机 [Calibre](https://calibre-ebook.com/) 书库按需加入图书。** 在书库点击「从 Calibre 添加」，或使用命令面板。默认读取书库里的 `metadata.db`（需要 Python 3）；若没有 Python，则回退到 `calibredb`。选定的 EPUB / PDF / MOBI 等文件会拷贝进当前仓库，不会把整座 Calibre 书库挂进 Obsidian。移动端不提供此入口。
 
 ![从 Calibre 按需加入书库](docs/assets/calibre-import.png)
+书库顶部的 **找书** 可输入书名或作者。点击 **搜索** 会在浏览器分别打开 Anna’s Archive 与 Z-Library 的搜索页，同时在插件内搜索 Project Gutenberg 公版书。也可以单独点击各站链接。选择 Gutenberg 结果后，点击 **下载并加入书库** 才会下载 EPUB 并导入当前仓库。Standard Ebooks 和维基文库提供可下载的 EPUB 书籍，也作为浏览器中的补充入口。下载有权使用的 EPUB、PDF 或 MOBI 后，可通过 **添加书籍** 导入。外部站点地址可能变化；插件不会抓取或下载外部站点内容。
 
 ### 2. 选中一句话，就地划线、批注或提问
 
@@ -152,7 +154,7 @@ AI 默认关闭。启用后，文本型 PDF 会把整份可提取文字作为新
 - 聚合服务：硅基流动、豆包/火山方舟、OpenRouter。
 - 国际服务：OpenAI。
 - 本地模型：Ollama、LM Studio。
-- 高级配置：任意 OpenAI 兼容接口。
+- 高级配置：任意 OpenAI 兼容接口，可直接新建或选择 Obsidian 密钥；密钥、模型和接口地址按服务分别保存。
 
 API 密钥保存在 Obsidian 的密钥库中，不会写入插件 `data.json`。设置页可发送一条不含书籍内容的最短消息测试连接。
 
@@ -182,6 +184,9 @@ CLI 模式会自动检测可执行文件和登录状态，在独立临时目录�
 
 | 可选功能 | 发送内容 | 目标服务 |
 | --- | --- | --- |
+| 找书与下载 | 主动搜索时发送书名或作者关键词；仅在点击下载时请求所选书籍目录和 EPUB | Project Gutenberg |
+| 外部书源搜索 | 主动搜索时在浏览器打开带有关键词的搜索页；插件不向这些网站发送仓库内容 | Anna’s Archive、Z-Library |
+| 外部书源链接 | 点击后在浏览器打开网站；插件不向这些网站发送仓库内容 | Standard Ebooks、维基文库 |
 | 翻译所选文字 | 当前选中的段落 | Google Translate |
 | AI 辅助阅读 | 你主动附加的 PDF 全文、当前页或选中文本、书名和问题 | 你明确选择并配置的模型服务 |
 | 本机 CLI 账号 | 你主动附加的 PDF 全文、当前页或选中文本、书名和问题 | Codex、Claude、Grok、Kimi 或 ZCode 的云端服务 |
@@ -270,7 +275,7 @@ BRAT and manual installation remain available as [alternative installation metho
 
 User-selected font files are read only on import and copied into the vault. Enumerating system fonts happens only after pressing the font picker button. Desktop CLI mode detects user-installed executables and runs them in an isolated temporary directory outside the vault; CLI configuration and login are managed by the installed tool.
 
-Reading works fully offline. In-reader settings are split into Reading and AI Assistance tabs, keeping frequent AI controls close to the book while API keys and endpoint URLs remain in Obsidian plugin settings. Optional AI reading assistance includes built-in quick prompts and supports signed-in Codex CLI, Claude Code CLI, Grok CLI, Kimi Code CLI, and ZCode CLI accounts without additional API-key setup, plus DeepSeek, Kimi, Qwen, GLM, MiniMax, SiliconFlow, Doubao, OpenRouter, OpenAI, Ollama, LM Studio, and custom OpenAI-compatible endpoints. CLI chats use persistent ACP sessions: Grok and Kimi provide ACP natively, while Codex, Claude, and ZCode use separately installed adapters. If an ACP session expires or its process exits before returning any content, the plugin rebuilds it and retries once; authentication, model, session, and process failures are reported separately. Grok ACP is launched with background auto-update disabled so an updater cannot delay the first streamed token. CLI providers are desktop-only and still send the page or selection you explicitly attach to their cloud service. AI is off by default and keys are stored with Obsidian SecretStorage.
+Reading works fully offline. In-reader settings are split into Reading and AI Assistance tabs, keeping frequent AI controls close to the book while API keys and endpoint URLs remain in Obsidian plugin settings. Optional AI reading assistance includes built-in quick prompts and supports signed-in Codex CLI, Claude Code CLI, Grok CLI, Kimi Code CLI, and ZCode CLI accounts without additional API-key setup, plus DeepSeek, Kimi, Qwen, GLM, MiniMax, SiliconFlow, Doubao, OpenRouter, OpenAI, Ollama, LM Studio, and custom OpenAI-compatible endpoints. Custom endpoints can create or select an Obsidian secret directly, and each provider keeps its own secret, model, and endpoint override. CLI chats use persistent ACP sessions: Grok and Kimi provide ACP natively, while Codex, Claude, and ZCode use separately installed adapters. If an ACP session expires or its process exits before returning any content, the plugin rebuilds it and retries once; authentication, model, session, and process failures are reported separately. Grok ACP is launched with background auto-update disabled so an updater cannot delay the first streamed token. CLI providers are desktop-only and still send the page or selection you explicitly attach to their cloud service. AI is off by default and keys are stored with Obsidian SecretStorage.
 
 **New in 4.2.7:** The AI companion appears on the first book open on wide desktop windows and remembers when you close it. Configure a service directly in the sidebar. Save translations with their original passage and location link to the book note, an open note, a new note or today’s Daily Note.
 

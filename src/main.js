@@ -34,7 +34,8 @@ import { searchableQuery, searchBookBlocks, nextSearchIndex } from "./reader-sea
 import { captureReadingAnchor, restoreReadingAnchor, queueReadingLayout, shouldFollowContext, comfortableLineWidth, zoomAnchorOffset, textPoint } from "./reader-experience.js";
 import { deriveAiSetupState } from "./ai-setup-state.js";
 import { PDF_CMAP_OPTIONS } from "./pdf-cmaps.js";
-import { PDF_AI_CONTEXT_MAX_CHARS, READER_BLOCK_SELECTOR, packPdfDocumentContext, pdfPageKind, pdfPageShell, pdfPageTextForAi } from "./pdf-page-mode.js";
+import { PDF_AI_CONTEXT_MAX_CHARS, READER_BLOCK_SELECTOR, packPdfDocumentContext, pdfPageKind, pdfPageShell, pdfPageTextFallback, pdfPageTextForAi } from "./pdf-page-mode.js";
+import { getPdfTextContent } from "./pdf-text-content.js";
 import { PDF_ZOOM_DEFAULT, PDF_ZOOM_MAX, PDF_ZOOM_MIN, clampPdfZoom, pdfZoomFromWheel, pdfZoomPercent, pdfZoomShortcut, stepPdfZoom } from "./pdf-zoom.js";
 import { appendReadingNoteExcerpts, isReadingHighlightsHeading, migrateAndReplaceReadingHighlights, replaceManagedReadingHighlights } from "./reading-note.js";
 import { cliAcpSupport, cliMeta, cliReasoningEfforts, disposeCliAiSessions, effectiveCliEffort, installCliAcp, probeCliAcp, probeCliAi, resolveAcpPath, resolveCliPath, runCliAi } from "./ai-cli.js";
@@ -60,6 +61,11 @@ import {
   readCoverDataUrl,
   readLibraryFile,
 } from "./calibre-library.js";
+import { contextProvider, findAgent, notifyContextChanged } from "./qiaomu-context.js";
+import { notifyHomeChanged } from "./qiaomu-home.js";
+import { createHomeProvider } from "./home.js";
+import { AI_ASSISTANT_ROUTES, readerSnapshot, shouldUseAgent } from "./agent-bridge.js";
+import { externalBookSearchUrls, gutenbergSearchUrl, gutenbergDetailUrl, parseGutenbergSearch, parseGutenbergEpub, validGutenbergEpub, safeBookFileName } from "./book-discovery.js";
 
 // Interface language is local to this plugin; dictionaries are bundled offline.
 let qiaomuReaderLanguage = "zh";
@@ -125,9 +131,15 @@ const DEFAULT_READER_SESSION = {
 const DEFAULT_AI = {
   aiCompanionVisible: null,
   aiEnabled: false, aiNeedsVerification: false, aiProvider: "",
+  // "auto" | "builtin" | "agent": who answers Ask AI when Qiaomu Agent is installed.
+  aiAssistant: "auto",
   // The API key itself lives in Obsidian SecretStorage. data.json keeps only
   // the selected secret ID so vault syncing never copies the key.
-  aiSecret: "", aiKey: "", aiModel: "",
+  // aiSecret and aiBase remain only as migration bridges for versions before
+  // 4.2.13. Active credentials and endpoint overrides are provider-scoped so
+  // switching services cannot reuse or erase another service's configuration.
+  aiSecret: "", aiKey: "", aiModel: "", aiBase: "",
+  aiSecrets: {}, aiBases: {},
   // Model and reasoning choices belong to the provider, not to the global AI
   // switch. A reader can move between Codex and Claude without losing either
   // selection. aiModel remains as a migration bridge for pre-3.7 installs.
@@ -135,7 +147,7 @@ const DEFAULT_AI = {
   // Provider-specific reasoning switches. An absent DeepSeek entry keeps the
   // service default (thinking enabled), while an explicit false survives
   // switching to another provider and back.
-  aiThinking: {}, aiCliEfforts: {}, aiBase: "",
+  aiThinking: {}, aiCliEfforts: {},
   // Optional per-provider executable overrides. Empty means auto-detect from
   // GUI PATH plus common macOS/Linux/Windows install locations.
   aiCliPaths: {},
@@ -767,11 +779,22 @@ function handleAreaNavClick(view, e) {
   return false;
 }
 
+// Page turns should stay visually quiet in immersive mode. A blank tap that
+// did not navigate can still bring the controls back, while links, images,
+// highlights and text selection keep their own interaction.
+function revealReaderChromeFromPage(view, e) {
+  if (e.defaultPrevented) return false;
+  if (e.target?.closest?.("a,button,input,textarea,select,[contenteditable],img,.qiaomu-reader-hl,.qiaomu-reader-hl-popup")) return false;
+  const sel = e.target?.ownerDocument?.getSelection() || selOf(view.areaEl);
+  if (sel && !sel.isCollapsed && sel.toString().trim()) return false;
+  view._armImmersive?.();
+  return true;
+}
+
 // iframe events do not bubble to the host's immersive chrome or tap zones.
 // Convert section coordinates before reusing the reader's navigation rules.
 function attachEngineChrome(view, doc, index) {
   doc.addEventListener("pointerdown", (event) => {
-    view._armImmersive?.();
     beginReaderSelection(view, event);
   });
   const release = () => { view._selectionDragging = false; };
@@ -788,17 +811,20 @@ function attachEngineChrome(view, doc, index) {
   doc.addEventListener("click", (event) => {
     const frame = doc.defaultView?.frameElement?.getBoundingClientRect();
     if (!frame) return;
-    if (handleAreaNavClick(view, {
+    const pageEvent = {
       target: event.target, defaultPrevented: event.defaultPrevented,
       clientX: event.clientX + frame.left,
-    })) event.preventDefault();
+    };
+    if (handleAreaNavClick(view, pageEvent)) event.preventDefault();
+    else revealReaderChromeFromPage(view, pageEvent);
   });
 }
 // Reader chrome lives above the page rather than reserving rows around it. In
 // immersive mode it retracts after a short pause and returns through several
-// equivalent inputs: touch/click, the top or bottom pointer edge, or keyboard
-// focus. Panels, selection tools and focused controls keep it visible so an
-// auto-hide timer can never take the active UI away from the reader.
+// equivalent inputs: a blank page tap, the top or bottom pointer edge, or
+// keyboard focus. Page-turn taps and swipes deliberately do not reveal it.
+// Panels, selection tools and focused controls keep it visible so an auto-hide
+// timer can never take the active UI away from the reader.
 function setupImmersiveChrome(view, root) {
   const chromeBusy = () => {
     const doc = docOf(root);
@@ -836,10 +862,12 @@ function setupImmersiveChrome(view, root) {
     const rect = root.getBoundingClientRect();
     if (event.clientY <= rect.top + 64 || event.clientY >= rect.bottom - 64) reveal();
   };
+  const revealFromChromeFocus = (event) => {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (target?.closest(".qiaomu-reader-top,.qiaomu-reader-bot,.qiaomu-reader-panel-open,.qiaomu-reader-hl-popup-on")) reveal();
+  };
   root.addEventListener("pointermove", revealFromEdge);
-  root.addEventListener("pointerdown", reveal);
-  root.addEventListener("touchstart", reveal, { passive: true });
-  root.addEventListener("focusin", reveal);
+  root.addEventListener("focusin", revealFromChromeFocus);
   view._armImmersive = reveal;
   reveal();
 }
@@ -996,7 +1024,9 @@ function attachReaderSwipeNav(view) {
   view.areaEl.addEventListener("touchstart", onStart, { passive: true });
   view.areaEl.addEventListener("touchmove", onMove, { passive: false });
   view.areaEl.addEventListener("touchend", onEnd, { passive: true });
-  view.areaEl.addEventListener("click", (ev) => handleAreaNavClick(view, ev));
+  view.areaEl.addEventListener("click", (ev) => {
+    if (!handleAreaNavClick(view, ev)) revealReaderChromeFromPage(view, ev);
+  });
 }
 
 // Zoom gestures and immersive chrome behave the same once either host's DOM
@@ -1465,6 +1495,10 @@ const QiaomuBookReader = class extends Plugin {
     this._unloading = false;
     this._watchCompanionAndNotes();
     this._registerReaderViews();
+    // Shares the open book with Qiaomu Agent (Qiaomu Context Protocol, see qiaomu-context.js).
+    this.qiaomuContext = contextProvider((leaf) => readerLeafSnapshot(this, leaf));
+    // Shows books in progress on Qiaomu Home (Qiaomu Home Protocol, see qiaomu-home.js).
+    this.qiaomuHome = createHomeProvider(this, qiaomuReaderTranslate);
     this._registerBookProtocol();
     this._registerReaderExtensions();
     this._addRibbonEntry();
@@ -1521,6 +1555,8 @@ const QiaomuBookReader = class extends Plugin {
       || this.app.isMobile || view.containerEl.ownerDocument.defaultView.innerWidth < 1000
       || this.settings.aiCompanionVisible === false || this.app.workspace.activeLeaf !== view.leaf) return;
     if (this._companionWasVisible && !this.app.workspace.rightSplit?.collapsed) return;
+    // Qiaomu Agent answers this reader's questions: do not open an unused built-in AI panel beside it.
+    if (this._agentAnswers?.()) return;
     this._openingCompanion = true;
     try { await this.openAiChat(readerAiPanelContext(view), { automatic: true }); }
     catch (error) { console.warn("Qiaomu Reader: companion could not open", error); }
@@ -1783,6 +1819,24 @@ const QiaomuBookReader = class extends Plugin {
     void this._showCompanionForBook(leaf.view);
     return leaf.view;
   }
+  /** True when Qiaomu Agent took the question: chosen in settings, or while the built-in AI is not set up. */
+  async _answerWithAgent(context, options = {}) {
+    const agent = options.automatic ? null : findAgent(this.app);
+    if (!agent || !context?.bookFile || !this._agentAnswers()) return false;
+    try {
+      return await askAgentFromReader(this, agent, context);
+    } catch (error) {
+      console.warn("Qiaomu Reader: Qiaomu Agent could not open", error);
+      new Notice(qiaomuReaderTranslate("could-not-open-the-ai-reading-sidebar"));
+      return true;
+    }
+  }
+  qiaomuAgentAvailable() { return findAgent(this.app) !== null; }
+  /** Whether Ask AI currently goes to Qiaomu Agent instead of the built-in AI. */
+  _agentAnswers() {
+    const state = aiSetupState(this);
+    return shouldUseAgent(this.settings.aiAssistant, { builtinReady: state.ready && state.enabled, agentAvailable: this.qiaomuAgentAvailable() });
+  }
   async openAiChat(context = null, options = {}) {
     let target = null;
     if (!context) {
@@ -1790,6 +1844,7 @@ const QiaomuBookReader = class extends Plugin {
       target = view?.bookHtml ? view : (this._openReaderModal?.bookHtml ? this._openReaderModal : null);
       if (target) context = readerAiPanelContext(target);
     }
+    if (await this._answerWithAgent?.(context, options)) return;
     if (this.app.isMobile) {
       const state = aiSetupState(this);
       if (!(state.ready && state.enabled)) {
@@ -1903,6 +1958,8 @@ const QiaomuBookReader = class extends Plugin {
     this.settings.aiAcpPaths = { ...(this.settings.aiAcpPaths || {}) };
     this.settings.calibreImports = { ...(this.settings.calibreImports || {}) };
     this.settings.aiModels = { ...(this.settings.aiModels || {}) };
+    this.settings.aiSecrets = { ...(this.settings.aiSecrets || {}) };
+    this.settings.aiBases = { ...(this.settings.aiBases || {}) };
     this.settings.aiThinking = { ...(this.settings.aiThinking || {}) };
     this.settings.aiCliEfforts = { ...(this.settings.aiCliEfforts || {}) };
     this.settings.aiChatHistory = normalizeAiChatHistory(this.settings.aiChatHistory);
@@ -1921,38 +1978,38 @@ const QiaomuBookReader = class extends Plugin {
     if (this.settings.quoteTemplate) {
       this.settings.quoteTemplate = this.settings.quoteTemplate.replace(/—\s+из\s+(?=\[\[\{book\}\]\])/giu, "— ");
     }
-    let v33SettingsMigrated = false;
+    let settingsMigrated = false;
     if (this.settings.aiProvider === "grok-cli"
       && !Object.prototype.hasOwnProperty.call(this.settings.aiCliEfforts, "grok-cli")) {
       this.settings.aiCliEfforts["grok-cli"] = "low";
-      v33SettingsMigrated = true;
+      settingsMigrated = true;
     }
     // v3.3 replaces the old colour names with purpose-built reading themes.
     // Migrate both the shared appearance and any per-device profiles once.
     const migratedTheme = migrateReaderTheme(this.settings.theme);
-    if (migratedTheme !== this.settings.theme) v33SettingsMigrated = true;
+    if (migratedTheme !== this.settings.theme) settingsMigrated = true;
     this.settings.theme = migratedTheme;
     if (!["auto", "reader"].includes(this.settings.libTheme)) {
       const migratedLibraryTheme = migrateReaderTheme(this.settings.libTheme);
-      if (migratedLibraryTheme !== this.settings.libTheme) v33SettingsMigrated = true;
+      if (migratedLibraryTheme !== this.settings.libTheme) settingsMigrated = true;
       this.settings.libTheme = migratedLibraryTheme;
     }
     for (const profile of Object.values(this.settings.deviceProfiles || {})) {
       if (profile && profile.theme) {
         const migratedProfileTheme = migrateReaderTheme(profile.theme);
-        if (migratedProfileTheme !== profile.theme) v33SettingsMigrated = true;
+        if (migratedProfileTheme !== profile.theme) settingsMigrated = true;
         profile.theme = migratedProfileTheme;
       }
     }
     if (this.settings.aiProvider === "local") {
       this.settings.aiProvider = "ollama";
-      v33SettingsMigrated = true;
+      settingsMigrated = true;
     }
     // Unknown providers must not send a saved key to a different service.
     if (this.settings.aiProvider && !aiProviderFor(this.settings.aiProvider)) {
       this.settings.aiProvider = "";
       this.settings.aiEnabled = false;
-      v33SettingsMigrated = true;
+      settingsMigrated = true;
     }
     // Move legacy plaintext keys out of data.json on modern Obsidian.
     // The retired service key is preserved as a secret but not selected.
@@ -1963,9 +2020,27 @@ const QiaomuBookReader = class extends Plugin {
       this.app.secretStorage.setSecret(secretId, this.settings.aiKey);
       if (this.settings.aiProvider) this.settings.aiSecret = secretId;
       this.settings.aiKey = "";
-      v33SettingsMigrated = true;
+      settingsMigrated = true;
     }
-    if (v33SettingsMigrated) await this._saveLocalData();
+    // Versions before 4.2.13 kept one selected secret and endpoint override
+    // globally. Associate those values only with the provider that owned them,
+    // then remove the global references so they cannot leak across providers.
+    const legacyAiProvider = this.settings.aiProvider;
+    if (this.settings.aiSecret) {
+      if (legacyAiProvider && !this.settings.aiSecrets[legacyAiProvider]) {
+        this.settings.aiSecrets[legacyAiProvider] = this.settings.aiSecret;
+      }
+      this.settings.aiSecret = "";
+      settingsMigrated = true;
+    }
+    if (this.settings.aiBase) {
+      if (legacyAiProvider && !this.settings.aiBases[legacyAiProvider]) {
+        this.settings.aiBases[legacyAiProvider] = normalizeAiBase(this.settings.aiBase);
+      }
+      this.settings.aiBase = "";
+      settingsMigrated = true;
+    }
+    if (settingsMigrated) await this._saveLocalData();
   }
   _applyLanguageDefaults() {
     // Qiaomu Reader is Chinese-first. Existing explicit language choices
@@ -2105,6 +2180,7 @@ const QiaomuBookReader = class extends Plugin {
     if (Object.keys(this.thumbCache).length) this._saveThumbCache();
   }
   _saveThumbCache() {
+    notifyHomeChanged(this.app, this.manifest.id);
     this._thumbSaveChain = (this._thumbSaveChain || Promise.resolve()).then(
       () => this.app.vault.adapter.write(this._thumbCachePath(), JSON.stringify({ ver: 2, artworkVersion: 1, cache: this.thumbCache }))
     ).catch((e) => console.warn("Qiaomu Reader: thumb cache save failed", e));
@@ -2513,6 +2589,8 @@ const QiaomuBookReader = class extends Plugin {
     }
   }
   saveProgress(bookPath, spread, total, block, cfi) {
+    notifyContextChanged(this.app, this.manifest.id);
+    notifyHomeChanged(this.app, this.manifest.id);
     const ratio = total > 1 ? spread / (total - 1) : 0;
     const percent = Math.round(ratio * 100);
     const stamp = Date.now();
@@ -3103,7 +3181,11 @@ const PdfPaginator = class {
     // here would make saveProgress prefer a fake block over the real percentage
     // and reopen an image-only PDF at the beginning every time.
     const pdfPage = this.currentPdfPageElement();
-    if (pdfPage && pdfPage.getAttribute("data-pdf-page-kind") !== "text") return -1;
+    if (pdfPage) {
+      if (pdfPage.getAttribute("data-pdf-page-kind") !== "text") return -1;
+      const pdfBlock = pdfPage.querySelector(READER_BLOCK_SELECTOR);
+      return pdfBlock ? [...this._blocks()].indexOf(pdfBlock) : -1;
+    }
     if (this.scrollMode) return this._blockIndexAtScroll();
     const blocks = this._blocks();
     if (!blocks.length || !this.sw) return -1;
@@ -3152,6 +3234,17 @@ const PdfPaginator = class {
     return Number.isFinite(value) ? value : null;
   }
   spreadForBlock(idx) { // block index -> spread index, in either layout mode
+    const block = this.blockEl(idx);
+    const pdfPage = block?.closest?.(".qiaomu-reader-pdf-page-break[data-pdf-page-no]");
+    if (pdfPage && this.flow) {
+      const flowRect = this.flow.getBoundingClientRect();
+      const pageRect = pdfPage.getBoundingClientRect();
+      if (this.scrollMode) {
+        const rowHeight = this.clip?.clientHeight || 1;
+        return Math.max(0, Math.min(Math.floor((pageRect.top - flowRect.top) / rowHeight), this.total - 1));
+      }
+      return Math.max(0, Math.min(Math.round((pageRect.left - flowRect.left) / (this.sw || 1)), this.total - 1));
+    }
     return this.scrollMode ? this._scrollSpreadForBlock(idx) : this._pagedSpreadForBlock(idx);
   }
   _scrollSpreadForBlock(idx) {
@@ -3256,10 +3349,12 @@ async function translateText(text, to = "ru") {
   }
   return translated.trim();
 }
-function aiSecretValue(plugin) {
+function aiSecretValue(plugin, providerId) {
   const settings = plugin.settings;
-  if (settings.aiSecret && plugin.app.secretStorage) {
-    return plugin.app.secretStorage.getSecret(settings.aiSecret) || "";
+  const secretId = settings.aiSecrets?.[providerId]
+    || (providerId === settings.aiProvider ? settings.aiSecret : "");
+  if (secretId && plugin.app.secretStorage) {
+    return plugin.app.secretStorage.getSecret(secretId) || "";
   }
   // Temporary compatibility path for Obsidian before SecretStorage and for the
   // one load in which a legacy plaintext key is being migrated.
@@ -3274,12 +3369,14 @@ function aiConfig(plugin) {
     id,
     provider: p,
     transport: p.transport || "http",
-    base: normalizeAiBase(settings.aiBase || p.base),
+    base: normalizeAiBase(settings.aiBases?.[id]
+      || (id === settings.aiProvider ? settings.aiBase : "")
+      || p.base),
     model: String(settings.aiModels && settings.aiModels[id] || settings.aiModel || p.model || "").trim(),
     thinking: !p.supportsThinking || !settings.aiThinking
       || settings.aiThinking[id] !== false,
     effort: effectiveCliEffort(id, settings.aiCliEfforts && settings.aiCliEfforts[id]),
-    key: aiSecretValue(plugin),
+    key: aiSecretValue(plugin, id),
     needsKey: p.needsKey,
     cliPath: String(settings.aiCliPaths && settings.aiCliPaths[id] || "").trim(),
     acpPath: String(settings.aiAcpPaths && settings.aiAcpPaths[id] || "").trim(),
@@ -3810,6 +3907,25 @@ function readerAiPanelContext(view) {
     bookFile: view.file,
     readerView: view,
   };
+}
+/** Marks a condensed PDF document context so the agent knows it is not the full text. */
+function agentReadyContext(context) {
+  if (!context) return null;
+  const pdf = context.kind === "document" ? context.readerView?.pdfDocumentContext : null;
+  return { ...context, truncated: pdf?.truncated === true };
+}
+function readerLeafSnapshot(plugin, leaf) {
+  const view = leaf?.view;
+  if (!(view instanceof ReaderView) || !view.file || !view.bookHtml) return null;
+  return readerSnapshot(plugin.manifest.id, agentReadyContext(readerAiPanelContext(view)) || { bookFile: view.file });
+}
+async function askAgentFromReader(plugin, agent, context) {
+  const view = context.readerView;
+  const surrounding = context.kind === "selection" && view ? agentReadyContext(readerDefaultAiContext(view)) : null;
+  const snapshot = readerSnapshot(plugin.manifest.id, agentReadyContext(context), surrounding);
+  if (!snapshot) return false;
+  await agent.ask({ context: snapshot });
+  return true;
 }
 function readerSupportsAiContext(view) {
   if (!view?.file || !view?.bookHtml) return false;
@@ -6506,9 +6622,9 @@ function syncOpenAiReaderContext(view) {
   const context = readerAiPanelContext(view);
   if (context) leaf.view.setContext(context, { follow: true, focusInput: false, silent: true });
 }
-async function pdfTextLayerHtml(page, textContent) {
-  if (!pdfjsLib.TextLayer || !textContent || !textContent.items?.length) return "";
-  const container = document.createElement("div");
+async function pdfTextLayerElement(page, textContent, ownerDocument = document) {
+  if (!pdfjsLib.TextLayer || !textContent || !textContent.items?.length) return null;
+  const container = ownerDocument.createElement("div");
   container.className = "qiaomu-reader-pdf-text-layer";
   container.setAttribute("data-pdf-selectable", "true");
   const viewport = page.getViewport({ scale: 1 });
@@ -6521,9 +6637,9 @@ async function pdfTextLayerHtml(page, textContent) {
     await layer.render();
   } catch (error) {
     console.warn(`Qiaomu Reader: PDF text layer unavailable on page ${page.pageNumber}`, error);
-    return "";
+    return null;
   }
-  return container.textContent.trim() ? container.outerHTML : "";
+  return container.textContent.trim() ? container : null;
 }
 
 function pdfPageCharCount(items) {
@@ -6551,21 +6667,25 @@ async function readPdfPage(doc, pageNumber, signal, onProgress, total) {
     onProgress(pageNumber, total);
   }
   const page = await doc.getPage(pageNumber);
-  throwIfReaderLoadAborted(signal);
-  const textContent = await page.getTextContent();
-  throwIfReaderLoadAborted(signal);
-  const textLen = pdfPageCharCount(textContent.items);
-  const size = pdfPageSize(page);
-  const brokenText = textLen >= 40 && pdfTextLooksUnreadable(textContent.items);
-  const textLayerHtml = brokenText ? "" : await pdfTextLayerHtml(page, textContent);
-  const kind = pdfPageKind(textLen, brokenText || !textLayerHtml);
-  return {
-    width: size.width,
-    height: size.height,
-    kind,
-    textLayerHtml,
-    aiText: kind === "text" ? pdfPageTextForAi(textContent.items) : "",
-  };
+  try {
+    throwIfReaderLoadAborted(signal);
+    const textContent = await getPdfTextContent(page);
+    throwIfReaderLoadAborted(signal);
+    const textLen = pdfPageCharCount(textContent.items);
+    const size = pdfPageSize(page);
+    const brokenText = textLen >= 40 && pdfTextLooksUnreadable(textContent.items);
+    const textFallback = brokenText ? "" : pdfPageTextFallback(textContent.items);
+    const kind = pdfPageKind(textLen, brokenText || !textFallback);
+    return {
+      width: size.width,
+      height: size.height,
+      kind,
+      textFallback,
+      aiText: kind === "text" ? pdfPageTextForAi(textContent.items) : "",
+    };
+  } finally {
+    page.cleanup?.();
+  }
 }
 
 // Resolves an outline entry to its 1-based page number, or null when the
@@ -6605,11 +6725,12 @@ function startRenderBudget(task, ms) {
   return { promise, clear: () => window.clearTimeout(timer) };
 }
 
-function createPdfLazyView(doc, loadingTask) {
+function createPdfLazyView(doc, loadingTask, pageText) {
   return {
     _doc: doc,
     _loadingTask: loadingTask,
     _destroyed: false,
+    _pageText: pageText,
     async _paint(task, budgetMs) {
       void task.promise.catch(() => {});
       const deadline = startRenderBudget(task, budgetMs);
@@ -6621,30 +6742,45 @@ function createPdfLazyView(doc, loadingTask) {
     },
     // The complete source page is always the visual truth. Text, when reliable,
     // is a transparent interaction layer and never replaces these pixels.
-    async render(pageNumber) {
+    async render(pageNumber, ownerDocument = document) {
       const page = await doc.getPage(pageNumber);
-      const unit = page.getViewport({ scale: 1 });
-      const fit = Math.max(1, Math.min(2, 1600 / Math.max(unit.width, unit.height, 1)));
-      for (const [scale, budget] of [[fit, 15000], [fit / 2, 8000]]) {
-        const viewport = page.getViewport({ scale });
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.ceil(viewport.width);
-        canvas.height = Math.ceil(viewport.height);
-        const context = canvas.getContext("2d");
-        context.fillStyle = "#ffffff";
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        try {
-          await this._paint(page.render({ canvasContext: context, viewport }), budget);
-          return canvas.toDataURL("image/jpeg", 0.82);
-        } catch (e) {
-          if (String(e && e.message) !== "qiaomu-reader-render-budget") throw e;
+      try {
+        if (this._destroyed) throw Object.assign(new Error("Reader closed"), { name: "AbortError" });
+        const unit = page.getViewport({ scale: 1 });
+        const fit = Math.max(1, Math.min(2, 1600 / Math.max(unit.width, unit.height, 1)));
+        const textContent = this._pageText[pageNumber - 1] ? await getPdfTextContent(page) : null;
+        const textLayer = textContent ? await pdfTextLayerElement(page, textContent, ownerDocument) : null;
+        for (const [scale, budget] of [[fit, 15000], [fit / 2, 8000]]) {
+          const viewport = page.getViewport({ scale });
+          const canvas = ownerDocument.createElement("canvas");
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          const context = canvas.getContext("2d");
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          try {
+            await this._paint(page.render({ canvasContext: context, viewport }), budget);
+            if (this._destroyed) throw Object.assign(new Error("Reader closed"), { name: "AbortError" });
+            return { src: canvas.toDataURL("image/jpeg", 0.82), textLayer };
+          } catch (e) {
+            if (String(e && e.message) !== "qiaomu-reader-render-budget") throw e;
+          } finally {
+            canvas.width = 0;
+            canvas.height = 0;
+          }
         }
+        throw new Error("qiaomu-reader-render-too-heavy");
+      } finally {
+        page.cleanup?.();
       }
-      throw new Error("qiaomu-reader-render-too-heavy");
+    },
+    textFor(pageNumber) {
+      return this._pageText[pageNumber - 1] || "";
     },
     destroy() {
       if (this._destroyed) return;
       this._destroyed = true;
+      this._pageText.length = 0;
       try { void loadingTask.destroy(); } catch { /* already stopped */ }
     }
   };
@@ -6672,17 +6808,18 @@ async function extractPdf(file, app, _settings = {}, onProgress, options = {}) {
     const doc = await loadingTask.promise;
     throwIfReaderLoadAborted(signal);
     const pageCount = doc.numPages;
-    const parts = [], textPages = [], outline = [];
+    const parts = [], textPages = [], pageText = [], outline = [];
     for (let i = 1; i <= pageCount; i++) {
       const part = await readPdfPage(doc, i, signal, onProgress, pageCount);
       if (part.kind === "text" && part.aiText) textPages.push({ page: i, text: part.aiText });
+      pageText.push(part.kind === "text" ? part.textFallback : "");
       parts.push(pdfPageShell({
         pageNumber: i,
         width: part.width,
         height: part.height,
         kind: part.kind,
         isLast: i === pageCount,
-        textLayerHtml: part.textLayerHtml,
+        textFallback: part.textFallback,
       }));
     }
     try {
@@ -6692,7 +6829,7 @@ async function extractPdf(file, app, _settings = {}, onProgress, options = {}) {
     }
     return {
       html: parts.join("\n"),
-      lazy: createPdfLazyView(doc, loadingTask),
+      lazy: createPdfLazyView(doc, loadingTask, pageText),
       outline,
       pdfDocumentContext: packPdfDocumentContext(textPages, PDF_AI_CONTEXT_MAX_CHARS),
     };
@@ -7251,9 +7388,11 @@ async function drawFigure(img, lazy, current = () => true) {
   const surface = img.closest(FIGURE_SURFACE_SELECTOR);
   if (surface) surface.addClass(FIGURE_RENDERING_CLASS);
   try {
-    const src = await lazy.render(figurePageNumber(img));
+    const rendered = await lazy.render(figurePageNumber(img), img.ownerDocument);
     if (!current()) return;
-    img.src = src;
+    img.src = rendered.src;
+    const oldLayer = surface?.querySelector(".qiaomu-reader-pdf-text-layer");
+    if (oldLayer && rendered.textLayer) oldLayer.replaceWith(rendered.textLayer);
     if (typeof img.decode === "function") await img.decode().catch(() => {});
     img.setAttribute(FIGURE_LOADED_ATTR, "1");
   } catch (e) {
@@ -7280,6 +7419,13 @@ async function sweepReaderFigures(reader, lazy) {
       await drawFigure(img, lazy, current);
     } else if (gap > FIGURE_DROP_SPAN && loadState === "1") {
       if (img.hasAttribute("src")) img.removeAttribute("src");
+      const surface = img.closest(FIGURE_SURFACE_SELECTOR);
+      const layer = surface?.querySelector(".qiaomu-reader-pdf-text-layer");
+      if (layer) {
+        layer.textContent = lazy.textFor(figurePageNumber(img));
+        layer.className = "qiaomu-reader-pdf-text-layer qiaomu-reader-pdf-text-placeholder";
+        layer.setAttribute("data-pdf-selectable", "false");
+      }
       img.setAttribute(FIGURE_LOADED_ATTR, "0");
     }
   }
@@ -7295,6 +7441,8 @@ async function renderVisibleFigures(reader) {
   } finally {
     const rerun = reader._figPending;
     reader._figBusy = reader._figPending = false;
+    reader._renderFlowHighlights?.();
+    if (reader._foundQuery) markFoundIn(reader, reader._foundQuery);
     if (rerun) renderVisibleFigures(reader);
   }
 }
@@ -7913,7 +8061,7 @@ const ReadSettingsModal = class extends Modal {
       });
       start.addEventListener("click", () => openPluginAiSettings(this.app, plugin, () => this._draw()));
     } else {
-      const providerName = cfg.provider.label;
+      const providerName = qiaomuReaderTranslate(cfg.provider.label);
       const modelName = cfg.model || (cfg.transport === "cli" ? qiaomuReaderTranslate("model-default") : qiaomuReaderTranslate("default-model"));
       const status = new Setting(section)
         .setName(qiaomuReaderTranslate("ai-assistance-is-set-up"))
@@ -10929,6 +11077,8 @@ const LibraryModal = class extends Modal {
       calibre.createSpan({ cls: "qiaomu-reader-lib-add-label", text: calibreText });
       this._activateOnClick(calibre, () => this.plugin.openCalibrePicker(this));
     }
+    const discover = headline.createEl("button", { cls: "qiaomu-reader-lib-find", text: qiaomuReaderTranslate("find-books") });
+    discover.addEventListener("click", () => new BookDiscoveryModal(this.app, this.plugin, this).open());
     return hdr;
   }
   _buildLibTools(hdr) {
@@ -11103,7 +11253,7 @@ const LibraryModal = class extends Modal {
     }
     if (picked.length === 0) {
       if (!rejected.length) new Notice(qiaomuReaderTranslate("no-files-selected"));
-      return;
+      return 0;
     }
     const target = this._targetDir();
     if (target && !this.app.vault.getAbstractFileByPath(target)) {
@@ -11124,6 +11274,7 @@ const LibraryModal = class extends Modal {
     if (ok) new Notice(qiaomuReaderTranslate("books-added-0", ok) + (rejected.length ? " · " + qiaomuReaderTranslate("skipped-0", rejected.length) : ""));
     if (errors.length) new Notice(qiaomuReaderTranslate("could-not-add-0", errors.join(", ")));
     if (ok > 0) this._refresh();
+    return ok;
   }
   _refresh() {
     this.contentEl.empty();
@@ -11383,6 +11534,140 @@ const LibraryModal = class extends Modal {
     // Flush any covers generated this session before the library closes.
     window.clearTimeout(this._thumbSaveT);
     if (this._thumbDirty) { this._thumbDirty = false; this.plugin.saveAll(); }
+    this.contentEl.empty();
+  }
+};
+
+// Search only on an explicit user action. External catalogs open in the browser;
+// Gutenberg's OPDS feed supplies downloadable EPUBs inside the plugin.
+const ANNA_SOURCE_NAME = "Anna’s Archive";
+const BookDiscoveryModal = class extends Modal {
+  constructor(app, plugin, library) {
+    super(app);
+    this.plugin = plugin;
+    this.library = library;
+    this._request = 0;
+  }
+  onOpen() {
+    this._open = true;
+    this.modalEl.addClass("qiaomu-reader-book-discovery");
+    const root = this.contentEl;
+    root.empty();
+    root.createEl("h2", { text: qiaomuReaderTranslate("find-books") });
+    root.createDiv({ cls: "qiaomu-reader-discovery-intro", text: qiaomuReaderTranslate("find-books-intro") });
+    const form = root.createEl("form", { cls: "qiaomu-reader-discovery-search" });
+    const label = form.createEl("label", { text: qiaomuReaderTranslate("book-title-or-author") });
+    const field = label.createEl("input", { attr: { type: "search", autocomplete: "off", placeholder: qiaomuReaderTranslate("book-title-or-author") } });
+    form.createEl("button", { attr: { type: "submit" }, text: qiaomuReaderTranslate("search") });
+    const primary = root.createEl("section", { cls: "qiaomu-reader-discovery-primary" });
+    primary.createEl("h3", { text: qiaomuReaderTranslate("browser-book-sources") });
+    const primaryLinks = primary.createDiv({ cls: "qiaomu-reader-discovery-primary-links" });
+    const anna = primaryLinks.createEl("a", { href: "https://annas-archive.gl/", attr: { target: "_blank", rel: "noopener noreferrer" } });
+    anna.textContent = ANNA_SOURCE_NAME;
+    setIcon(anna.createSpan({ cls: "qiaomu-reader-discovery-link-icon" }), "arrow-up-right");
+    const zlibrary = primaryLinks.createEl("a", { href: "https://z-library.sk/", attr: { target: "_blank", rel: "noopener noreferrer" } });
+    zlibrary.createSpan({ text: "Z-Library" });
+    setIcon(zlibrary.createSpan({ cls: "qiaomu-reader-discovery-link-icon" }), "arrow-up-right");
+    const gutenberg = root.createEl("section", { cls: "qiaomu-reader-discovery-gutenberg" });
+    gutenberg.createEl("h3", { text: qiaomuReaderTranslate("search-gutenberg") });
+    const status = gutenberg.createDiv({ cls: "qiaomu-reader-discovery-status" });
+    status.setAttribute("role", "status");
+    const results = gutenberg.createDiv({ cls: "qiaomu-reader-discovery-results" });
+    const updateLinks = () => {
+      const urls = externalBookSearchUrls(field.value);
+      anna.href = urls?.anna || "https://annas-archive.gl/";
+      zlibrary.href = urls?.zlibrary || "https://z-library.sk/";
+      for (const { link, base, parameter } of links) {
+        const target = new URL(base);
+        if (field.value.trim()) target.searchParams.set(parameter, field.value.trim());
+        link.href = !field.value.trim() && parameter === "search" ? "https://zh.wikisource.org/" : target.href;
+      }
+    };
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const urls = externalBookSearchUrls(field.value);
+      if (!urls) return;
+      window.open(urls.anna, "_blank", "noopener");
+      window.open(urls.zlibrary, "_blank", "noopener");
+      void this._search(field.value, status, results);
+    });
+    field.addEventListener("input", updateLinks);
+    const other = root.createEl("section", { cls: "qiaomu-reader-discovery-other" });
+    other.createEl("h3", { text: qiaomuReaderTranslate("other-book-sources") });
+    const external = other.createDiv({ cls: "qiaomu-reader-discovery-sources" });
+    const sources = [
+      ["Standard Ebooks", "https://standardebooks.org/ebooks", "query"],
+      [qiaomuReaderTranslate("wikisource"), "https://zh.wikisource.org/w/index.php", "search"]
+    ];
+    const links = sources.map(([name, base, parameter]) => ({
+      link: external.createEl("a", { text: name, href: base, attr: { target: "_blank", rel: "noopener noreferrer" } }),
+      base, parameter
+    }));
+    other.createDiv({ cls: "qiaomu-reader-discovery-hint", text: qiaomuReaderTranslate("external-book-source-hint") });
+    field.focus();
+  }
+  async _search(query, status, results) {
+    const value = String(query || "").trim();
+    if (!value) return;
+    const request = ++this._request;
+    results.empty();
+    status.setText(qiaomuReaderTranslate("searching-books"));
+    try {
+      const response = await requestUrl({ url: gutenbergSearchUrl(value), method: "GET", throw: false });
+      if (!this._open || request !== this._request) return;
+      if (response.status !== 200) throw new Error(`HTTP ${response.status}`);
+      const books = parseGutenbergSearch(response.text, (xml) => new DOMParser().parseFromString(xml, "application/xml"));
+      status.setText(books.length ? qiaomuReaderTranslate("gutenberg-results-note") : qiaomuReaderTranslate("no-books-found"));
+      for (const book of books) {
+        const row = results.createDiv({ cls: "qiaomu-reader-discovery-result" });
+        const info = row.createDiv({ cls: "qiaomu-reader-discovery-result-info" });
+        info.createEl("strong", { text: book.title });
+        if (book.author) info.createSpan({ text: book.author });
+        row.createEl("a", { text: qiaomuReaderTranslate("book-page"), href: book.pageUrl, attr: { target: "_blank", rel: "noopener noreferrer" } });
+        const download = row.createEl("button", { text: qiaomuReaderTranslate("download-to-library") });
+        download.addEventListener("click", () => void this._download(book, download, status));
+      }
+    } catch (error) {
+      if (!this._open || request !== this._request) return;
+      console.warn("Qiaomu Reader: book search failed", error);
+      status.setText(qiaomuReaderTranslate("book-search-failed"));
+    }
+  }
+  async _download(book, button, status) {
+    if (button.disabled) return;
+    const fileName = safeBookFileName(book.title, book.id);
+    if (this.app.vault.getFiles().some((file) => file.name.endsWith(`(Gutenberg ${book.id}).epub`))) {
+      status.setText(qiaomuReaderTranslate("book-already-in-library"));
+      return;
+    }
+    button.disabled = true;
+    button.setText(qiaomuReaderTranslate("downloading-book"));
+    try {
+      const detail = await requestUrl({ url: gutenbergDetailUrl(book.id), method: "GET", throw: false });
+      if (!this._open) return;
+      if (detail.status !== 200) throw new Error(`Catalog HTTP ${detail.status}`);
+      const epub = parseGutenbergEpub(detail.text, book.id, (xml) => new DOMParser().parseFromString(xml, "application/xml"));
+      if (!epub) throw new Error("No EPUB acquisition link");
+      const response = await requestUrl({ url: epub.url, method: "GET", throw: false });
+      if (!this._open) return;
+      if (response.status !== 200 || !validGutenbergEpub(response.arrayBuffer)) throw new Error("Invalid EPUB response");
+      const imported = await this.library._importBooks([{ name: fileName, type: "application/epub+zip", arrayBuffer: async () => response.arrayBuffer }]);
+      if (!imported) throw new Error("Vault import failed");
+      status.setText(qiaomuReaderTranslate("book-import-finished"));
+    } catch (error) {
+      if (!this._open) return;
+      console.warn("Qiaomu Reader: book download failed", error);
+      status.setText(qiaomuReaderTranslate("book-download-failed"));
+    } finally {
+      if (this._open) {
+        button.disabled = false;
+        button.setText(qiaomuReaderTranslate("download-to-library"));
+      }
+    }
+  }
+  onClose() {
+    this._open = false;
+    this._request += 1;
     this.contentEl.empty();
   }
 };
@@ -12647,12 +12932,13 @@ const SettingsTab = class extends PluginSettingTab {
     const s = plugin.settings;
     const cfg = aiConfig(plugin);
     c.addClass("qiaomu-reader-ai-setup");
+    if (plugin.qiaomuAgentAvailable?.()) this._aiAssistantRow(c, s);
     this._aiProviderRow(c, s, redraw);
     if (!cfg.provider) return;
     const p = cfg.provider;
     this._aiModelPicker(c, s, p, redraw);
     const needsSecret = p.transport !== "cli" && p.needsKey && !cfg.key;
-    if (needsSecret) this._aiSecretRow(c, s, p);
+    if (needsSecret || cfg.id === "custom") this._aiSecretRow(c, s, p);
     if (cfg.id === "custom") this._aiBaseRow(c, s, p);
     const feedback = c.createDiv("qiaomu-reader-ai-setup-feedback");
     feedback.setAttribute("role", "status");
@@ -12726,6 +13012,18 @@ const SettingsTab = class extends PluginSettingTab {
     };
     render();
   }
+  /** Shown only while Qiaomu Agent is installed and enabled. */
+  _aiAssistantRow(host, s) {
+    new Setting(host).setName(qiaomuReaderTranslate("ai-assistant")).addDropdown(dropdown => {
+      dropdown.selectEl.setAttribute("aria-label", qiaomuReaderTranslate("ai-assistant"));
+      const labels = { auto: qiaomuReaderTranslate("ai-assistant-auto"), builtin: qiaomuReaderTranslate("ai-assistant-builtin"), agent: qiaomuReaderTranslate("ai-assistant-agent") };
+      for (const route of AI_ASSISTANT_ROUTES) dropdown.addOption(route, labels[route]);
+      dropdown.setValue(AI_ASSISTANT_ROUTES.includes(s.aiAssistant) ? s.aiAssistant : "auto").onChange(async route => {
+        s.aiAssistant = route;
+        await this._saveAll();
+      });
+    });
+  }
   _aiProviderRow(host, s, redraw) {
     new Setting(host).setName(qiaomuReaderTranslate("ai-service")).addDropdown(dropdown => {
       dropdown.selectEl.setAttribute("aria-label", qiaomuReaderTranslate("ai-service"));
@@ -12740,7 +13038,6 @@ const SettingsTab = class extends PluginSettingTab {
       dropdown.setValue(s.aiProvider || "").onChange(async choice => {
         s.aiProvider = choice;
         s.aiModel = s.aiModels && s.aiModels[choice] || "";
-        s.aiBase = "";
         s.aiEnabled = false;
         s.aiNeedsVerification = Boolean(choice);
         await this._saveAll();
@@ -12980,14 +13277,17 @@ const SettingsTab = class extends PluginSettingTab {
     acpSetting.addButton((b) => b.setButtonText(qiaomuReaderTranslate("view-install-docs")).onClick(() => window.open(acp.installUrl, "_blank")));
   }
   _aiSecretRow(host, s, p) {
+    if (!s.aiSecrets || typeof s.aiSecrets !== "object") s.aiSecrets = {};
+    const secretId = s.aiSecrets[s.aiProvider] || "";
     const keySetting = new Setting(host)
-      .setName(qiaomuReaderTranslate("api-key"))
+      .setName(qiaomuReaderTranslate(s.aiProvider === "custom" ? "api-key-optional" : "api-key"))
       .setDesc(qiaomuReaderTranslate("the-key-is-stored-in-obsidian-secretstorage-and-is-not-written-t"));
     if (typeof SecretComponent === "function" && this.app.secretStorage) {
       keySetting.addComponent((el) => new SecretComponent(this.app, el)
-        .setValue(s.aiSecret || "")
+        .setValue(secretId)
         .onChange(async (value) => {
-          s.aiSecret = value;
+          s.aiSecrets = { ...s.aiSecrets, [s.aiProvider]: value || "" };
+          s.aiSecret = "";
           s.aiKey = "";
           s.aiEnabled = false;
           s.aiNeedsVerification = true;
@@ -13031,11 +13331,13 @@ const SettingsTab = class extends PluginSettingTab {
       });
   }
   _aiBaseRow(host, s, p) {
+    if (!s.aiBases || typeof s.aiBases !== "object") s.aiBases = {};
     new Setting(host)
       .setName(qiaomuReaderTranslate("base-url"))
       .setDesc(qiaomuReaderTranslate("usually-leave-this-empty-change-it-only-for-regional-endpoints-p"))
-      .addText((field) => field.setPlaceholder(p.base || "https://…/v1").setValue(s.aiBase || "").onChange(async (value) => {
-        s.aiBase = normalizeAiBase(value);
+      .addText((field) => field.setPlaceholder(p.base || "https://…/v1").setValue(s.aiBases[s.aiProvider] || "").onChange(async (value) => {
+        s.aiBases = { ...s.aiBases, [s.aiProvider]: normalizeAiBase(value) };
+        s.aiBase = "";
         s.aiEnabled = false;
         s.aiNeedsVerification = true;
         await this._saveAll();
@@ -13324,7 +13626,7 @@ const SettingsTab = class extends PluginSettingTab {
     const modelName = cfg.model || (cfg.transport === "cli" ? qiaomuReaderTranslate("model-default") : qiaomuReaderTranslate("default-model"));
     setup
       .setName(qiaomuReaderTranslate("ai-assistance-is-set-up"))
-      .setDesc(`${cfg.provider.label} · ${modelName}`)
+      .setDesc(`${qiaomuReaderTranslate(cfg.provider.label)} · ${modelName}`)
       .addButton((btn) => btn
         .setButtonText(qiaomuReaderTranslate("change-service"))
         .onClick(() => openPluginAiSettings(this.app, this.plugin, () => this._redraw())));

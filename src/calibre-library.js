@@ -184,7 +184,13 @@ export function readLibraryFile(libraryPath, filePath) {
   const rt = calibreRuntime();
   if (!rt) throw new Error("desktop-only");
   if (!isInsideDir(libraryPath, filePath, rt.path)) throw new Error("path-outside-library");
-  const data = rt.fs.readFileSync(filePath);
+  const root = rt.fs.realpathSync(libraryPath);
+  const target = rt.fs.realpathSync(filePath);
+  if (!isInsideDir(root, target, rt.path)) throw new Error("path-outside-library");
+  const stat = rt.fs.statSync(target);
+  if (!stat.isFile()) throw new Error("not-a-book-file");
+  if (stat.size >= CALIBRE_BLOCK_BYTES) throw new Error("calibre-file-too-large");
+  const data = rt.fs.readFileSync(target);
   return { bytes: copyToArrayBuffer(data), size: data.length };
 }
 

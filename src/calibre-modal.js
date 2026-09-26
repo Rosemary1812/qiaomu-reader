@@ -56,6 +56,7 @@ export class CalibreSearchModal extends Modal {
   }
 
   onClose() {
+    this._searchGen += 1;
     window.clearTimeout(this._timer);
     this.contentEl.empty();
   }
