@@ -37,6 +37,7 @@ Qiaomu Reader 是中文优先的 Obsidian EPUB、PDF、FB2、MOBI、AZW3 和 CBZ
 | 回答成为笔记 | 保存完整 AI 回答，本地提取可修改标题；独立保存或追加到本书笔记 |
 | 少打断的交互 | 快捷问题直接可见；草稿按书落盘；专注阅读保留右侧 AI，不带回左侧文件树 |
 | 自选 AI 服务 | 保留自定义提示词；支持 CLI / ACP、国产模型、OpenAI 兼容接口及本地模型 |
+| 起点页接续 | 装了[乔木Home](https://github.com/joeseesun/qiaomu-home)时，主页显示在读的书（封面、进度），点击回到上次位置；主页搜索框也能搜书名 |
 
 ## 功能导览
 
