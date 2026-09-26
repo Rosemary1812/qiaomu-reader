@@ -50,6 +50,8 @@ import { BUNDLED_FONT_FAMILIES, ensureBundledReaderFont } from "./bundled-fonts.
 import { cloneJson, createSerialTaskQueue, isPlainRecord, mergeReadingProgress, readJsonRecordStore, writeVerifiedJsonRecord } from "./storage.js";
 import { createReaderLoadCoordinator, isReaderLoadAbort, throwIfReaderLoadAborted, waitForReaderFrame } from "./reader-load.js";
 import { contextProvider, findAgent, notifyContextChanged } from "./qiaomu-context.js";
+import { notifyHomeChanged } from "./qiaomu-home.js";
+import { createHomeProvider } from "./home.js";
 import { AI_ASSISTANT_ROUTES, readerSnapshot, shouldUseAgent } from "./agent-bridge.js";
 import { externalBookSearchUrls, gutenbergSearchUrl, gutenbergDetailUrl, parseGutenbergSearch, parseGutenbergEpub, validGutenbergEpub, safeBookFileName } from "./book-discovery.js";
 
@@ -1482,6 +1484,8 @@ const QiaomuBookReader = class extends Plugin {
     this._registerReaderViews();
     // Shares the open book with Qiaomu Agent (Qiaomu Context Protocol, see qiaomu-context.js).
     this.qiaomuContext = contextProvider((leaf) => readerLeafSnapshot(this, leaf));
+    // Shows books in progress on Qiaomu Home (Qiaomu Home Protocol, see qiaomu-home.js).
+    this.qiaomuHome = createHomeProvider(this, qiaomuReaderTranslate);
     this._registerBookProtocol();
     this._registerReaderExtensions();
     this._addRibbonEntry();
@@ -2140,6 +2144,7 @@ const QiaomuBookReader = class extends Plugin {
     if (Object.keys(this.thumbCache).length) this._saveThumbCache();
   }
   _saveThumbCache() {
+    notifyHomeChanged(this.app, this.manifest.id);
     this._thumbSaveChain = (this._thumbSaveChain || Promise.resolve()).then(
       () => this.app.vault.adapter.write(this._thumbCachePath(), JSON.stringify({ ver: 2, artworkVersion: 1, cache: this.thumbCache }))
     ).catch((e) => console.warn("Qiaomu Reader: thumb cache save failed", e));
@@ -2430,6 +2435,7 @@ const QiaomuBookReader = class extends Plugin {
   }
   saveProgress(bookPath, spread, total, block, cfi) {
     notifyContextChanged(this.app, this.manifest.id);
+    notifyHomeChanged(this.app, this.manifest.id);
     const ratio = total > 1 ? spread / (total - 1) : 0;
     const percent = Math.round(ratio * 100);
     const stamp = Date.now();
