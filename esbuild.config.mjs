@@ -2,8 +2,8 @@ import esbuild from "esbuild";
 import process from "process";
 import fs from "fs";
 import path from "path";
-import zlib from "zlib";
 import { buildProfile } from "./scripts/build-profile.mjs";
+import { gzipForRelease } from "./scripts/gzip-release.mjs";
 import { foliateElements } from "./scripts/foliate-elements.mjs";
 
 const profileArg = process.argv.find((arg) => arg.startsWith("--profile="));
@@ -172,14 +172,6 @@ const ctx = await esbuild.context({
   // Injected as a plain string literal; setupWorker() reads it as __PDF_WORKER_CODE__.
   define: { __PDF_WORKER_CODE__: JSON.stringify(workerCode), ...foliate.define },
 });
-
-function gzipForRelease(buffer) {
-  const gzip = zlib.gzipSync(buffer, { level: 9, mtime: 0 });
-  // Node writes the host OS into gzip byte 9. macOS and Ubuntu CI then
-  // disagree, and git diff of that one-line payload stalls the artifact check.
-  gzip[9] = 255;
-  return gzip;
-}
 
 if (prod) {
   const result = await ctx.rebuild();
