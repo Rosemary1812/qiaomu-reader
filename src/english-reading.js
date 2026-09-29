@@ -88,27 +88,119 @@ export function englishGlossViewport(doc, readingArea) {
   return { left: 0, right: width, top: 0, bottom: height };
 }
 
-// Draw annotations in a shadow root, without changing the EPUB text nodes.
-// Foliate uses those nodes to calculate CFIs for highlights and saved places.
+// Draw annotations outside the EPUB text nodes. Foliate uses those nodes to
+// calculate CFIs for highlights and saved places. Labels that would cover one
+// another are dropped, and a click opens the same dictionary card as a word.
+const GLOSS_CHAR_PX = 11;
+const GLOSS_HEIGHT_PX = 14;
+const SENTENCE_BLOCK = "p,li,blockquote,h1,h2,h3,h4,h5,h6,td,figcaption";
+
+export function glossLabelBox(rect, gloss) {
+  const width = Math.max(GLOSS_CHAR_PX, [...String(gloss)].length * GLOSS_CHAR_PX);
+  const center = rect.left + rect.width / 2;
+  const bottom = rect.top - 1;
+  return { left: center - width / 2, right: center + width / 2, top: bottom - GLOSS_HEIGHT_PX, bottom };
+}
+
+function glossBoxesOverlap(a, b) {
+  return a.left < b.right + 2 && a.right + 2 > b.left && a.top < b.bottom + 2 && a.bottom + 2 > b.top;
+}
+
+export function layoutEnglishGlosses(entries) {
+  const placed = [];
+  const occupied = [];
+  for (const entry of entries) {
+    if (!entry?.gloss || !entry.range) continue;
+    const rect = entry.range.getBoundingClientRect();
+    if (!(rect.width > 0)) continue;
+    const box = glossLabelBox(rect, entry.gloss);
+    if (occupied.some(other => glossBoxesOverlap(other, box))) continue;
+    occupied.push(box);
+    placed.push(entry);
+  }
+  return placed;
+}
+
+function textBefore(node, index) {
+  const inline = String(node.textContent || "").slice(0, index).replace(/[\s\u00a0]+$/u, "");
+  if (inline) return inline;
+  const block = node.parentElement?.closest?.(SENTENCE_BLOCK);
+  let current = node;
+  while (current) {
+    if (current.previousSibling) {
+      current = current.previousSibling;
+      if (block && !block.contains(current)) return "";
+      while (current.lastChild && (!block || block.contains(current.lastChild))) current = current.lastChild;
+    } else {
+      current = current.parentNode;
+      if (!current || (block && !block.contains(current))) return "";
+      continue;
+    }
+    if (current.nodeType === 3) {
+      const text = current.textContent.replace(/[\s\u00a0]+$/u, "");
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
+function isSentenceInitial(node, index) {
+  const tail = textBefore(node, index).replace(/["“”'‘’«»()[\]（）\s\u00a0]+$/u, "");
+  return !tail || /[.!?…。！？]$/u.test(tail);
+}
+
+// Mid-sentence capitals are treated as names. Sentence-initial capitals are
+// ordinary words that happen to start a sentence. All-caps tokens stay names.
+function skipCapitalizedName(word, node, index) {
+  if (!/^[A-Z]/.test(word)) return false;
+  const letters = word.replace(/[^A-Za-z]/g, "");
+  if (letters && letters === letters.toUpperCase()) return true;
+  return !isSentenceInitial(node, index);
+}
+
+function bindGlossClick(element, word, onActivate) {
+  if (!word || typeof onActivate !== "function") return;
+  const stop = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  element.addEventListener("pointerdown", stop);
+  element.addEventListener("click", (event) => {
+    stop(event);
+    const box = element.getBoundingClientRect();
+    const frame = element.ownerDocument.defaultView?.frameElement?.getBoundingClientRect();
+    onActivate(word, {
+      left: box.left + (frame?.left || 0),
+      bottom: box.bottom + (frame?.top || 0),
+    });
+  });
+}
+
 export function createEnglishGlossLayer(doc, overlayer) {
+  const paint = (entries, viewport, onActivate) => layoutEnglishGlosses(entries.filter(entry => {
+    if (!entry?.gloss || !entry.range) return false;
+    return isVisibleRect(entry.range.getBoundingClientRect(), viewport);
+  })).map(entry => ({ entry, rect: entry.range.getBoundingClientRect(), onActivate }));
+
   if (overlayer?.element) {
     const svg = overlayer.element;
     const style = doc.createElementNS("http://www.w3.org/2000/svg", "style");
-    style.textContent = `.qiaomu-english-gloss-svg{font:11px system-ui;fill:#806747;stroke:#fff;stroke-width:3;paint-order:stroke fill;text-anchor:middle}`;
+    style.textContent = `.qiaomu-english-gloss-svg{font:11px system-ui;fill:#806747;stroke:#fff;stroke-width:3;paint-order:stroke fill;text-anchor:middle}
+.qiaomu-english-gloss-svg text{pointer-events:auto;cursor:pointer}`;
     const group = doc.createElementNS("http://www.w3.org/2000/svg", "g");
     group.setAttribute("class", "qiaomu-english-gloss-svg");
     svg.append(style, group);
     return {
-      draw(entries, viewport = englishGlossViewport(doc)) {
+      draw(entries, viewport = englishGlossViewport(doc), onActivate) {
         group.replaceChildren();
-        for (const { range, gloss } of entries) {
-          if (!gloss) continue;
-          const rect = range.getBoundingClientRect();
-          if (!isVisibleRect(rect, viewport)) continue;
+        for (const { entry, rect } of paint(entries, viewport, onActivate)) {
           const label = doc.createElementNS("http://www.w3.org/2000/svg", "text");
-          label.textContent = gloss;
+          label.textContent = entry.gloss;
           label.setAttribute("x", String(rect.left + rect.width / 2));
           label.setAttribute("y", String(rect.top - 3));
+          label.setAttribute("pointer-events", "auto");
+          if (entry.word) label.setAttribute("data-word", entry.word);
+          bindGlossClick(label, entry.word, onActivate);
           group.append(label);
         }
       },
@@ -119,21 +211,19 @@ export function createEnglishGlossLayer(doc, overlayer) {
   host.className = "qiaomu-english-gloss-host";
   const shadow = host.attachShadow({ mode: "closed" });
   const style = doc.createElement("style");
-  style.textContent = `.gloss{position:fixed;pointer-events:none;transform:translate(-50%,-100%);white-space:nowrap;font:11px system-ui;color:#806747;background:white}`;
+  style.textContent = `.gloss{position:fixed;cursor:pointer;transform:translate(-50%,-100%);white-space:nowrap;font:11px system-ui;color:#806747;background:white;pointer-events:auto}`;
   shadow.append(style);
   doc.body.append(host);
   return {
-    draw(entries, viewport = englishGlossViewport(doc)) {
+    draw(entries, viewport = englishGlossViewport(doc), onActivate) {
       shadow.querySelectorAll(".gloss").forEach(node => node.remove());
-      for (const { range, gloss } of entries) {
-        if (!gloss) continue;
-        const rect = range.getBoundingClientRect();
-        if (!isVisibleRect(rect, viewport)) continue;
+      for (const { entry, rect } of paint(entries, viewport, onActivate)) {
         const label = doc.createElement("span");
         label.className = "gloss";
-        label.textContent = gloss;
+        label.textContent = entry.gloss;
         label.style.left = `${rect.left + rect.width / 2}px`;
         label.style.top = `${rect.top - 1}px`;
+        bindGlossClick(label, entry.word, onActivate);
         shadow.append(label);
       }
     },
@@ -148,7 +238,7 @@ function isVisibleRect(rect, viewport) {
 }
 
 export function visibleEnglishWords(doc, level, limit = 28, viewport = englishGlossViewport(doc), dictionary = null) {
-  const found = [], seen = new Set();
+  const found = [], seen = new Set(), occupied = [];
   const parentRects = new WeakMap();
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
@@ -173,11 +263,18 @@ export function visibleEnglishWords(doc, level, limit = 28, viewport = englishGl
     let match;
     while ((match = pattern.exec(node.textContent)) && found.length < limit) {
       const word = match[0], key = word.toLowerCase();
-      if (/^[A-Z]/.test(word) || seen.has(key) || !shouldGloss(word, level) || (dictionary && !lookupEnglishWord(dictionary, word))) continue;
+      if (seen.has(key) || !shouldGloss(word, level) || skipCapitalizedName(word, node, match.index)) continue;
+      const gloss = dictionary ? lookupEnglishWord(dictionary, word)?.gloss : "";
+      if (dictionary && !gloss) continue;
       const range = doc.createRange();
       range.setStart(node, match.index); range.setEnd(node, match.index + word.length);
       const rect = range.getBoundingClientRect();
       if (!isVisibleRect(rect, viewport)) continue;
+      if (gloss) {
+        const box = glossLabelBox(rect, gloss);
+        if (occupied.some(other => glossBoxesOverlap(other, box))) continue;
+        occupied.push(box);
+      }
       seen.add(key);
       found.push({ word, range });
     }
