@@ -173,12 +173,20 @@ const ctx = await esbuild.context({
   define: { __PDF_WORKER_CODE__: JSON.stringify(workerCode), ...foliate.define },
 });
 
+function gzipForRelease(buffer) {
+  const gzip = zlib.gzipSync(buffer, { level: 9, mtime: 0 });
+  // Node writes the host OS into gzip byte 9. macOS and Ubuntu CI then
+  // disagree, and git diff of that one-line payload stalls the artifact check.
+  gzip[9] = 255;
+  return gzip;
+}
+
 if (prod) {
   const result = await ctx.rebuild();
   const fontData = fs.readFileSync("fonts/QiaomuReadingFangsong.woff2").toString("base64");
   const openDyslexicData = fs.readFileSync("fonts/OpenDyslexic-Regular.woff2").toString("base64");
   const cefrData = fs.readFileSync("src/english-cefr.json").toString("base64");
-  const dictionaryData = zlib.gzipSync(fs.readFileSync("src/english-dictionary.json"), { level: 9 }).toString("base64");
+  const dictionaryData = gzipForRelease(fs.readFileSync("src/english-dictionary.json")).toString("base64");
   const css = fs.readFileSync("src/styles.css", "utf8") + `\n/* BUNDLED FONT PROVENANCE\n${fontProvenance}\nBUNDLED FONT LICENSE — SIL OFL 1.1\n${fontLicense}\n--- OpenDyslexic ---\n${openDyslexicLicense}\n*/\n@font-face { font-family: 'QBR Zhuque Fangsong'; src: url('data:font/woff2;base64,${fontData}') format('woff2'); font-style: normal; font-weight: 400; font-display: swap; }\n@font-face { font-family: 'QBR OpenDyslexic'; src: url('data:font/woff2;base64,${openDyslexicData}') format('woff2'); font-style: normal; font-weight: 400; font-display: swap; }\n`;
   const wordDataLicense = fs.readFileSync("licenses/words-cefr-MIT.txt", "utf8");
   const dictionaryLicense = fs.readFileSync("licenses/freedict-eng-zho-CC-BY-SA-3.0.txt", "utf8");

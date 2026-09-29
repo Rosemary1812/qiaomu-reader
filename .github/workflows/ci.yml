@@ -24,6 +24,14 @@ jobs:
       - run: npm run verify:release
       - run: npx eslint src/ --max-warnings=0
       - name: Verify committed build artifact
-        run: git diff --exit-code -- main.js styles.css
+        run: |
+          ok=1
+          for name in main.js styles.css; do
+            if ! git show "HEAD:$name" | cmp -s - "$name"; then
+              echo "$name differs from the committed build artifact"
+              ok=0
+            fi
+          done
+          test "$ok" = 1
       - name: Verify community candidate excludes the ACP installer
         run: npm run build:community
