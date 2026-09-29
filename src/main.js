@@ -40,6 +40,7 @@ import { PDF_AI_CONTEXT_MAX_CHARS, READER_BLOCK_SELECTOR, packPdfDocumentContext
 import { getPdfTextContent } from "./pdf-text-content.js";
 import { PDF_ZOOM_DEFAULT, PDF_ZOOM_MAX, PDF_ZOOM_MIN, clampPdfZoom, pdfZoomFromWheel, pdfZoomPercent, pdfZoomShortcut, stepPdfZoom } from "./pdf-zoom.js";
 import { appendReadingNoteExcerpts, isReadingHighlightsHeading, migrateAndReplaceReadingHighlights, replaceManagedReadingHighlights } from "./reading-note.js";
+import { buildReadingHeatmap, mountReadingHeatmap, pruneReadingLog, shiftDayKey } from "./reading-heatmap.js";
 import { cliAcpSupport, cliMeta, cliReasoningEfforts, disposeCliAiSessions, effectiveCliEffort, installCliAcp, probeCliAcp, probeCliAi, resolveAcpPath, resolveCliPath, runCliAi } from "./ai-cli.js";
 import { QIAOMU_READER_EN } from "./i18n-en.js";
 import { QIAOMU_READER_ZH_CN } from "./i18n-zh.js";
@@ -619,12 +620,6 @@ function fmtReadTime(seconds) {
   const days = Math.floor(hours / 24), spareHours = hours % 24;
   return spareHours ? qiaomuReaderTranslate("0-d-1-h", days, spareHours) : qiaomuReaderTranslate("0-d", days);
 }
-function shiftDayKey(dayKey, dayDelta) {
-  const anchor = new Date(`${dayKey}T12:00:00Z`);
-  if (Number.isNaN(anchor.getTime())) return dayKey;
-  anchor.setUTCDate(anchor.getUTCDate() + dayDelta);
-  return anchor.toISOString().slice(0, 10);
-}
 function readingStreak(dayLog, todayKey) {
   if (!dayLog) return 0;
   const readThatDay = (k) => (dayLog[k] || 0) > 0;
@@ -644,10 +639,6 @@ function readingStats(dayLog, lifetimeSeconds, todayKey) {
     if (sec > 0) daysRead += 1;
     if (sec > best) { best = log[k]; bestDay = k; }
   }
-  const recent = Array.from({ length: 14 }, (_, idx) => {
-    const key = shiftDayKey(todayKey, idx - 13);
-    return { key, sec: log[key] || 0 };
-  });
   return {
     total: Math.max(lifetimeSeconds || 0, loggedSeconds),
     today: log[todayKey] || 0,
@@ -656,8 +647,32 @@ function readingStats(dayLog, lifetimeSeconds, todayKey) {
     best,
     bestDay,
     avgPerDay: daysRead ? Math.round(loggedSeconds / daysRead) : 0,
-    recent,
   };
+}
+let readingHeatLabelSeq = 0;
+function heatMonthLabel(dayKey) {
+  try {
+    if (window.moment) return window.moment(dayKey, "YYYY-MM-DD").format("MMM");
+  } catch { /* the month number is enough when the date library is missing */ }
+  return String(Number(String(dayKey).slice(5, 7)));
+}
+function showReadingHeatmap(parent, plugin, options = {}) {
+  const todayKey = readerTodayKey();
+  const log = plugin.settings.readingLog || {};
+  const model = buildReadingHeatmap(log, todayKey, plugin.getGoalSeconds());
+  if (!model.active) return false;
+  const streak = readingStreak(log, todayKey);
+  const caption = options.caption
+    ? (streak > 0
+      ? qiaomuReaderTranslate("0-day-streak", streak)
+      : `${qiaomuReaderTranslate("today")} ${fmtReadTime(log[todayKey] || 0)}`)
+    : "";
+  return Boolean(mountReadingHeatmap(parent, model, {
+    caption,
+    labelledBy: options.labelledBy || "",
+    formatTime: fmtReadTime,
+    formatMonth: heatMonthLabel,
+  }));
 }
 // Reading-time tracking. Each open reader runs one interval that accrues
 // seconds into the plugin day/lifetime logs, flushing to disk every
@@ -2382,8 +2397,7 @@ const QiaomuBookReader = class extends Plugin {
     const k = this._todayKey();
     s.readingLog[k] = (s.readingLog[k] || 0) + sec;
     s.lifetimeSeconds = (s.lifetimeSeconds || 0) + sec;
-    const keys = Object.keys(s.readingLog);
-    if (keys.length > 100) { keys.sort(); while (keys.length > 90) delete s.readingLog[keys.shift()]; }
+    s.readingLog = pruneReadingLog(s.readingLog, k);
     this._readingDirty = true;
   }
   getTodaySeconds() {
@@ -11313,6 +11327,7 @@ const LibraryModal = class extends Modal {
     if (!contentEl.isConnected || this._libraryRender !== render) return;
     const folder = qiaomuReaderPath(this.plugin.settings.booksFolder);
     const files = this._libVaultBooks(folder);
+    showReadingHeatmap(contentEl, this.plugin, { caption: true });
     if (files.length === 0) {
       this._buildLibEmpty(contentEl, folder);
       return;
@@ -13051,7 +13066,7 @@ const SettingsTab = class extends PluginSettingTab {
     };
     (drawers[this._tab] || drawers.about)(body);
   }
-  _statsCard(c) {
+  _statsCard(c, labelledBy) {
     const st = readingStats(this.plugin.settings.readingLog, this.plugin.settings.lifetimeSeconds, readerTodayKey());
     const card = c.createDiv({ cls: "qiaomu-reader-stats" });
 
@@ -13076,21 +13091,7 @@ const SettingsTab = class extends PluginSettingTab {
     cell(qiaomuReaderTranslate("daily-average"), fmtReadTime(st.avgPerDay));
     cell(qiaomuReaderTranslate("best-day"), fmtReadTime(st.best));
 
-    const peak = st.recent.reduce((a, r) => Math.max(a, r.sec), 0);
-    if (peak > 0) {
-      const chart = card.createDiv({ cls: "qiaomu-reader-stats-chart" });
-      const bars = chart.createDiv({ cls: "qiaomu-reader-stats-bars" });
-      for (const r of st.recent) {
-        const col = bars.createDiv({ cls: "qiaomu-reader-stats-bar" + (r.sec > 0 ? " is-read" : "") });
-        const fill = col.createDiv({ cls: "qiaomu-reader-stats-fill" });
-        fill.style.height = r.sec > 0 ? Math.max(8, Math.round(r.sec / peak * 100)) + "%" : "2px";
-        col.setAttr("aria-label", r.key + " — " + fmtReadTime(r.sec));
-        col.setAttr("title", r.key + " — " + fmtReadTime(r.sec));
-      }
-      const legend = chart.createDiv({ cls: "qiaomu-reader-stats-legend" });
-      legend.createSpan({ text: qiaomuReaderTranslate("14-days-ago") });
-      legend.createSpan({ text: qiaomuReaderTranslate("today") });
-    } else {
+    if (!showReadingHeatmap(card, this.plugin, { labelledBy })) {
       card.createDiv({ cls: "qiaomu-reader-stats-empty", text: qiaomuReaderTranslate("open-a-book-and-start-the-timer-your-reading-history-will-appear") });
     }
   }
@@ -13184,8 +13185,9 @@ const SettingsTab = class extends PluginSettingTab {
       .addSlider((slider) => withSliderValue(slider.setLimits(5, 120, 5).setValue(s.dailyGoalMin || 15))
         .onChange(async (v) => { s.dailyGoalMin = v; await this.plugin.saveAll(); }));
 
-    c.createEl("h3", { cls: "qiaomu-reader-set-h", text: t("reading-statistics") });
-    this._statsCard(c);
+    const statsHeading = c.createEl("h3", { cls: "qiaomu-reader-set-h", text: t("reading-statistics") });
+    statsHeading.id = `qbr-reading-stats-${readingHeatLabelSeq++}`;
+    this._statsCard(c, statsHeading.id);
   }
   _saveAll() {
     return this.plugin.saveAll();

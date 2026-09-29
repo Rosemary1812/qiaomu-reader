@@ -6,6 +6,7 @@ This file records user-visible changes in the unofficial enhanced fork maintaine
 
 ### Fork enhancements
 
+- Added a one-year reading heatmap on the library and in reading statistics. Squares follow the daily goal, and reading days are kept for 400 days.
 - Added offline English word lookup and optional page glosses; longer selections can still use AI assistance.
 - Added continuous EPUB scrolling across chapter boundaries and stabilized downward scrolling from book covers.
 - Highlighted the current chapter in the contents panel.
