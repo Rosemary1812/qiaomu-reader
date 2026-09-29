@@ -7,6 +7,7 @@ This file records user-visible changes in the unofficial enhanced fork maintaine
 ### Fork enhancements
 
 - Added offline English word lookup and optional page glosses; longer selections can still use AI assistance.
+- Removed dead duplicate Simplified Chinese strings and corrected live labels such as saved cover counts, note creation, and cover size.
 - Added continuous EPUB scrolling across chapter boundaries and stabilized downward scrolling from book covers.
 - Highlighted the current chapter in the contents panel.
 - Added Vim-style reader navigation, Windows shortcut handling, and the OpenDyslexic reading font.

@@ -57,7 +57,18 @@ const cyrillicCopyErrors = Object.entries(QIAOMU_READER_ZH_CN)
   .filter(([, value]) => /[А-Яа-яЁё]/.test(String(value)))
   .map(([key, value]) => `${key} → ${value}`);
 
+const zhSource = await fs.readFile(new URL("../src/i18n-zh.js", import.meta.url), "utf8");
+const zhKeyCounts = new Map();
+for (const line of zhSource.split("\n")) {
+  const match = line.match(/^ {2}"((?:\\.|[^"\\])*)":/);
+  if (!match) continue;
+  const key = JSON.parse(`"${match[1]}"`);
+  zhKeyCounts.set(key, (zhKeyCounts.get(key) || 0) + 1);
+}
+const duplicateZhKeys = [...zhKeyCounts.entries()].filter(([, count]) => count > 1).map(([key]) => key);
+
 const errors = [];
+if (duplicateZhKeys.length) errors.push(`Duplicate Chinese dictionary keys: ${duplicateZhKeys.join(" | ")}`);
 if (missing.length) errors.push(`Missing Chinese translations: ${missing.join(" | ")}`);
 if (missingUsedEnglish.length) errors.push(`Used strings missing from English dictionary: ${missingUsedEnglish.join(" | ")}`);
 if (missingUsedChinese.length) errors.push(`Used strings missing from Chinese dictionary: ${missingUsedChinese.join(" | ")}`);
