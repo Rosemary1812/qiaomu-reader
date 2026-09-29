@@ -6,6 +6,7 @@ This file records user-visible changes in the unofficial enhanced fork maintaine
 
 ### Fork enhancements
 
+- Shelf search matches a title or a tag. Subjects already in the book, and Calibre tags on import, are saved without a model call. An explicit action can ask the configured AI for up to three tags from the title, contents, and opening, after you confirm them.
 - Added offline English word lookup and optional page glosses; longer selections can still use AI assistance.
 - Added continuous EPUB scrolling across chapter boundaries and stabilized downward scrolling from book covers.
 - Highlighted the current chapter in the contents panel.

@@ -31,6 +31,10 @@ function setup() {
     qiaomuReaderTranslate: (key, n) => n === undefined ? key : `${key}:${n}`, svgIcon() {},
     bookNoteLinkFor: () => "linked", resolveBookNote: () => ({}), openOrCreateBookNoteBeside: async () => { notes++; },
     Notice: class {}, Date, qiaomuReaderPath: value => value, coverPalette, docOf: () => document,
+    bookTagsOf: (settings, bookPath) => {
+      const value = settings?.bookTags?.[bookPath];
+      return Array.isArray(value) ? value.filter(Boolean) : [];
+    },
   });
   const library = new Library({}, plugin);
   library.loadThumb = async () => {};
@@ -60,6 +64,7 @@ test("a book without notes stays quiet and only offers continue reading", () => 
   x.library.plugin.getHighlights = () => [];
   x.library.renderCard(x.host, x.file);
   assert.equal(x.host.querySelector(".qiaomu-reader-lib-note-count"), null);
+  assert.equal(x.host.querySelector(".qiaomu-reader-lib-tags"), null);
   assert.equal(x.host.querySelectorAll(".qiaomu-reader-lib-action").length, 1);
   assert.equal(x.host.querySelector(".qiaomu-reader-lib-action-label").textContent, "library-continue");
 });
@@ -70,6 +75,21 @@ test("notes appear in the reading status and the cover offers view notes", () =>
   assert.equal(count.textContent, "library-note-count:1");
   const labels = [...x.host.querySelectorAll(".qiaomu-reader-lib-action-label")].map(el => el.textContent);
   assert.deepEqual(labels, ["library-continue", "library-view-notes"]);
+});
+
+test("a shelf tag filters the library and does not open the book", () => {
+  const x = setup();
+  x.host.replaceChildren();
+  x.library.plugin.settings.bookTags = { [x.file.path]: ["哲学", "诗", "历史", "多余"] };
+  let selected = "";
+  x.library._selectLibChip = (id) => { selected = id; };
+  x.library.renderCard(x.host, x.file);
+  const buttons = [...x.host.querySelectorAll(".qiaomu-reader-lib-tag")];
+  assert.deepEqual(buttons.map((el) => el.textContent), ["哲学", "诗", "历史"]);
+  buttons[0].click();
+  assert.equal(selected, "tag:哲学");
+  assert.equal(x.stats().reads, 0);
+  assert.equal(x.host.querySelector(".qiaomu-reader-lib-cover").querySelectorAll("button").length, 1);
 });
 
 test("card keyboard activation opens once and menu activation stays local", () => {

@@ -22,6 +22,7 @@ import { makeBook } from "foliate-js/view.js";
 import { Overlayer } from "foliate-js/overlayer.js";
 import { searchMatcher } from "foliate-js/search.js";
 import { textWalker } from "foliate-js/text-walker.js";
+import { firstText, plainText, tocLabels, tagsForBook, BOOK_TAG_EXCERPT_CHARS } from "./book-tags.js";
 import "./continuous-epub.js";
 
 // Every extension this engine can open; the plugin registers all of them.
@@ -37,6 +38,48 @@ const VIEW_TAG = typeof __QBR_ENGINE_VIEW_TAG__ === "string" ? __QBR_ENGINE_VIEW
 
 function continuousEpubRequested(fileName, settings) {
     return settings.readMode === "scroll" && /\.epub$/i.test(fileName || "");
+}
+
+// Read the container the library already parses. Subjects that can already be
+// tags are enough; otherwise keep the first linear section's opening and leave
+// the rendered reader alone.
+export async function sampleEngineBookTopics(bytes, fileName) {
+    const name = String(fileName || "book");
+    const fallbackTitle = name.replace(/\.[^.]+$/, "");
+    if (/\.cbz$/i.test(name)) return { kind: "comic", title: fallbackTitle, author: "", subjects: [], description: "", toc: [], excerpt: "" };
+    const file = new File([bytes], name);
+    const book = await makeBook(file);
+    try {
+        const meta = book?.metadata || {};
+        const subjects = [];
+        const visit = (value) => {
+            if (!value) return;
+            if (Array.isArray(value)) { value.forEach(visit); return; }
+            subjects.push(value);
+        };
+        visit(meta.subject);
+        const title = firstText(meta.title) || fallbackTitle;
+        const section = (book?.sections || []).find((item) => item?.linear !== "no" && item.createDocument)
+            || (book?.sections || []).find((item) => item?.createDocument);
+        let excerpt = "";
+        // A subject that can already be a tag is enough. A title-only subject still
+        // leaves the opening available, so the book is not skipped with nothing to read.
+        if (!tagsForBook({ suggestions: subjects, title }).length && section) {
+            const doc = await section.createDocument();
+            excerpt = plainText(doc?.body?.textContent || doc?.documentElement?.textContent || "", BOOK_TAG_EXCERPT_CHARS);
+        }
+        return {
+            kind: "text",
+            title,
+            author: firstText(meta.author),
+            subjects,
+            description: plainText(firstText(meta.description), 800),
+            toc: tocLabels(book?.toc),
+            excerpt,
+        };
+    } finally {
+        try { book?.destroy?.(); } catch { /* a format without a parser teardown still returns its sample */ }
+    }
 }
 
 export function engineLayout(settings = {}, width = 0) {

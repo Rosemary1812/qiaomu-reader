@@ -1436,6 +1436,17 @@ button.qiaomu-reader-find-item.qiaomu-reader-toc-active { background: var(--back
 .qiaomu-reader-lib .qiaomu-reader-lib-book-title { font-size:14px; line-height:1.45; margin:0 0 5px; overflow-wrap:anywhere; }
 .qiaomu-reader-lib .qiaomu-reader-lib-book-meta { font-size:12px; font-weight:400; letter-spacing:0; line-height:1.4; }
 .qiaomu-reader-lib-note-count { color:var(--interactive-accent, var(--qiaomu-reader-lib-accent, #3b6cff)); font-weight:600; }
+.qiaomu-reader-lib-taggen { flex:0 0 auto; height:36px; padding:0 12px; border-radius:9px; white-space:nowrap; cursor:pointer; font:inherit; font-size:12.5px; color:var(--qiaomu-reader-lib-muted); background:transparent; border:1px solid var(--qiaomu-reader-lib-border); }
+.qiaomu-reader-lib-taggen:hover, .qiaomu-reader-lib-taggen:focus-visible { color:var(--qiaomu-reader-lib-text); border-color:var(--qiaomu-reader-lib-text); }
+.qiaomu-reader-lib-tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+.qiaomu-reader-lib-tag { appearance:none; border:1px solid var(--qiaomu-reader-lib-border); background:transparent; color:var(--qiaomu-reader-lib-muted); border-radius:6px; padding:2px 6px; font:inherit; font-size:11px; line-height:1.3; cursor:pointer; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+.qiaomu-reader-lib-tag:hover, .qiaomu-reader-lib-tag:focus-visible { color:var(--qiaomu-reader-lib-text); border-color:var(--qiaomu-reader-lib-text); }
+.qiaomu-reader-book-tags-note { white-space:pre-wrap; color:var(--text-muted); font-size:13px; margin-bottom:12px; }
+.qiaomu-reader-book-tags-list { max-height:min(50vh, 420px); overflow:auto; }
+.qiaomu-reader-book-tags-row { display:flex; flex-direction:column; gap:4px; margin-bottom:10px; }
+.qiaomu-reader-book-tags-name { font-weight:600; }
+.qiaomu-reader-book-tags-row input { width:100%; }
+.qiaomu-reader-book-tags-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:8px; }
 .qiaomu-reader-lib .qiaomu-reader-lib-strip { height:3px; z-index:4; }
 .qiaomu-reader-lib .qiaomu-reader-lib-strip-fill { background:#3b6cff; }
 .qiaomu-reader-lib .qiaomu-reader-lib-morebtn { top:8px; right:8px; width:32px; height:32px; border-radius:10px; background:rgba(255,255,255,.92); color:var(--qiaomu-reader-lib-text); border-color:transparent; opacity:1; transform:none; box-shadow:0 1px 4px rgba(0,0,0,.12); }

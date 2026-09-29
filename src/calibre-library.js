@@ -42,6 +42,7 @@ def pack(row):
         "sizes": sizes,
         "stems": stems,
         "isbn": row["isbn"] or "",
+        "tags": [part for part in str(row["tags"] or "").split("||") if part],
         "posFrac": row["pos_frac"] if row["pos_frac"] is not None else None,
         "lastRead": row["last_read"] if row["last_read"] is not None else None,
     }
@@ -53,6 +54,7 @@ SELECT b.id, b.title, b.path, b.uuid, b.has_cover, b.last_modified,
   (SELECT group_concat(d.format || ":" || d.uncompressed_size, ",") FROM data d WHERE d.book=b.id) AS sizes,
   (SELECT group_concat(d.format || ":" || d.name, "||") FROM data d WHERE d.book=b.id) AS stems,
   (SELECT i.val FROM identifiers i WHERE i.book=b.id AND lower(i.type)="isbn" LIMIT 1) AS isbn,
+  (SELECT group_concat(t.name, "||") FROM books_tags_link tl JOIN tags t ON t.id=tl.tag WHERE tl.book=b.id) AS tags,
   (SELECT MAX(p.pos_frac) FROM last_read_positions p WHERE p.book=b.id) AS pos_frac,
   (SELECT MAX(p.epoch) FROM last_read_positions p WHERE p.book=b.id) AS last_read
 FROM books b
@@ -356,6 +358,7 @@ function booksFromCalibredbRows(rows, libraryPath, pathApi) {
       sizes,
       stems,
       isbn: String(isbn),
+      tags: Array.isArray(row.tags) ? row.tags : String(row.tags || "").split(","),
       posFrac: null,
       lastRead: null,
     };
@@ -371,7 +374,7 @@ async function searchViaCalibredb(libraryPath, calibredbPath, query, limit) {
     "list",
     "--library-path", libraryPath,
     "--for-machine",
-    "-f", "title,authors,formats,uuid,id,identifiers,isbn,size",
+    "-f", "title,authors,formats,uuid,id,identifiers,isbn,size,tags",
     "--limit", String(limit),
   ];
   if (query) args.push("-s", query);

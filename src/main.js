@@ -13,7 +13,8 @@ import { HL_COLOR_SWATCHES } from "./highlight-colors.js";
  * esbuild at build time — see esbuild.config.mjs for what gets stubbed out.
  */
 import { AbstractInputSuggest, Component, FuzzySuggestModal, ItemView, MarkdownView, MarkdownRenderer, Menu, Modal, Notice, Platform, Plugin, PluginSettingTab, Scope, SecretComponent, Setting, TFile, TFolder, normalizePath, requestUrl, setIcon } from "obsidian";
-import { EpubEngine, ENGINE_EXTENSIONS, coverFromBytes } from "./reader-engine.js";
+import { EpubEngine, ENGINE_EXTENSIONS, coverFromBytes, sampleEngineBookTopics } from "./reader-engine.js";
+import { BOOK_TAG_EXCERPT_CHARS, bookMatchesLibraryQuery, buildTagPrompt, mergeBookTags, parseModelTags, plainText, tagsForBook, tagsForNewBook } from "./book-tags.js";
 import { VIM_NAV_SETTING, VIM_GG_WINDOW_MS, createVimChordState, isTypingTarget, resolveVimNavAction, scrollStepPx } from "./vim-nav.js";
 import { coverPalette, migrateCoverCache } from "./book-cover.js";
 // One place decides which extensions the reader opens: the rendering engine
@@ -2541,6 +2542,11 @@ const QiaomuBookReader = class extends Plugin {
         skipped += 1;
         continue;
       }
+      const importedTags = tagsForNewBook(bookTagsOf(this.settings, vaultPath), book.tags);
+      if (importedTags) {
+        if (!this.settings.bookTags) this.settings.bookTags = {};
+        this.settings.bookTags[vaultPath] = importedTags;
+      }
       this.settings.calibreImports[book.uuid || `id:${book.id}`] = {
         id: book.id,
         uuid: book.uuid || "",
@@ -2586,12 +2592,19 @@ const QiaomuBookReader = class extends Plugin {
     const base = bookNotesFolderPath(this.app) || notesFolderPath(this.app) || "";
     return this.createBookNote(file, file.basename, base);
   }
-  async setBookTags(bookPath, tags) {
+  writeBookTags(bookPath, tags) {
     const s = this.settings;
     if (!s.bookTags) s.bookTags = {};
     const list = (tags || []).filter(Boolean);
     if (list.length) s.bookTags[bookPath] = list;
     else delete s.bookTags[bookPath];
+  }
+  async setBookTags(bookPath, tags) {
+    this.writeBookTags(bookPath, tags);
+    await this.saveAll();
+  }
+  async setManyBookTags(entries) {
+    for (const [bookPath, tags] of entries || []) this.writeBookTags(bookPath, tags);
     await this.saveAll();
   }
   async createBookNote(file, title, folder) { // create (or reuse) the note linked to a book
@@ -11253,12 +11266,8 @@ function libChipMatches(chipId, f, booksFolder, getProgress, getTags) {
   return true;
 }
 function filterLibBooks(bookFiles, chipId, query, booksFolder, getProgress, getTags) {
-  const needle = (query || "")
-    .trim()
-    .toLowerCase();
   return bookFiles.filter((f) => {
-    const haystack = f.basename.toLowerCase();
-    if (needle && !haystack.includes(needle)) return false;
+    if (!bookMatchesLibraryQuery(f.basename, getTags ? getTags(f.path) : [], query)) return false;
     const noChip = !chipId || chipId === "all";
     if (noChip) return true;
     return libChipMatches(chipId, f, booksFolder, getProgress, getTags);
@@ -11284,6 +11293,227 @@ function parseBookTags(raw) {
 }
 // Import MIME types that map onto a known book extension.
 const IMPORT_MIME_EXT = new Map([["application/pdf", "pdf"], ["application/epub+zip", "epub"]]);
+
+// Subjects that already fit a tag are enough. Page text is read only when they
+// are not, and only the opening is kept.
+async function samplePdfTopics(app, file, signal) {
+  const loadingTask = await openPdfLoadingTask(app, file, signal);
+  const stop = () => { try { void loadingTask.destroy(); } catch { /* already stopped */ } };
+  signal?.addEventListener("abort", stop, { once: true });
+  try {
+    const doc = await loadingTask.promise;
+    throwIfReaderLoadAborted(signal);
+    let info = {};
+    try {
+      const meta = await doc.getMetadata();
+      info = meta?.info || {};
+    } catch { /* a PDF can still be tagged from its opening when metadata is unreadable */ }
+    throwIfReaderLoadAborted(signal);
+    const title = String(info.Title || file.basename || "").trim();
+    const author = String(info.Author || "").trim();
+    const subjects = [info.Subject, info.Keywords].filter((item) => item != null && String(item).trim());
+    if (tagsForBook({ suggestions: subjects, title }).length) {
+      return { kind: "text", title, author, subjects, description: "", toc: [], excerpt: "" };
+    }
+    const outline = [];
+    try { await collectPdfOutlineInto(doc, outline); }
+    catch { /* an outline is optional; its absence still leaves the opening text */ }
+    throwIfReaderLoadAborted(signal);
+    const parts = [];
+    const pageCount = Math.min(2, doc.numPages || 0);
+    let sawText = false;
+    for (let page = 1; page <= pageCount; page++) {
+      const part = await readPdfPage(doc, page, signal);
+      if (part.kind === "text" && part.aiText) {
+        sawText = true;
+        parts.push(part.aiText);
+      }
+    }
+    return {
+      kind: sawText ? "text" : "scan",
+      title,
+      author,
+      subjects: [],
+      description: "",
+      toc: outline.slice(0, 12).map((item) => item.label).filter(Boolean),
+      excerpt: plainText(parts.join("\n"), BOOK_TAG_EXCERPT_CHARS),
+    };
+  } finally {
+    signal?.removeEventListener("abort", stop);
+    try { await loadingTask.destroy(); } catch { /* already stopped */ }
+  }
+}
+
+async function sampleBookTopics(app, file, signal) {
+  throwIfReaderLoadAborted(signal);
+  const ext = String(file?.extension || "").toLowerCase();
+  const title = file?.basename || "";
+  if (ext === "cbz") return { kind: "comic", title, author: "", subjects: [], description: "", toc: [], excerpt: "" };
+  if (ext === "pdf") return samplePdfTopics(app, file, signal);
+  const bytes = await app.vault.readBinary(file);
+  throwIfReaderLoadAborted(signal);
+  return sampleEngineBookTopics(bytes, `${title}.${file.extension}`);
+}
+
+async function proposeBookTags(app, plugin, file, signal) {
+  const sample = await sampleBookTopics(app, file, signal);
+  const shelfTags = allBookTags(plugin.settings);
+  const title = sample.title || file.basename;
+  const fromBook = tagsForBook({ suggestions: sample.subjects, shelfTags, title });
+  const existing = bookTagsOf(plugin.settings, file.path);
+  if (fromBook.length) {
+    return { status: "ready", source: "metadata", path: file.path, title: file.basename, tags: mergeBookTags(existing, fromBook) };
+  }
+  const hasText = Boolean(sample.excerpt || sample.description || sample.toc?.length);
+  if (!hasText || sample.kind === "comic" || sample.kind === "scan") {
+    return { status: "skip", path: file.path, title: file.basename };
+  }
+  if (!aiSetupState(plugin).enabled) return { status: "needs-ai", path: file.path, title: file.basename };
+  // A tag request must not keep a CLI session full of book openings.
+  const answer = await aiExplain("", plugin, [{
+    role: "user",
+    content: buildTagPrompt({
+      title,
+      author: sample.author,
+      description: sample.description,
+      toc: sample.toc,
+      excerpt: sample.excerpt,
+      shelfTags,
+    }),
+  }], "", { signal });
+  const generated = tagsForBook({ suggestions: parseModelTags(answer), shelfTags, title });
+  if (!generated.length) return { status: "skip", path: file.path, title: file.basename };
+  return { status: "ready", source: "ai", path: file.path, title: file.basename, tags: mergeBookTags(existing, generated) };
+}
+
+async function runBookTagging(app, plugin, files, refresh) {
+  const list = (files || []).filter(Boolean);
+  if (!list.length) return;
+  const controller = new AbortController();
+  const progress = new BookTagProgressModal(app, controller, list.length);
+  progress.open();
+  const proposals = [];
+  let skipped = 0;
+  let needsAi = false;
+  let failedName = "";
+  let aborted = false;
+  try {
+    for (let index = 0; index < list.length; index++) {
+      if (controller.signal.aborted) { aborted = true; break; }
+      const file = list[index];
+      progress.setCurrent(index + 1, list.length, file.basename);
+      try {
+        const result = await proposeBookTags(app, plugin, file, controller.signal);
+        if (result.status === "needs-ai") { needsAi = true; continue; }
+        if (result.status === "ready") proposals.push(result);
+        else skipped += 1;
+      } catch (error) {
+        if (isReaderLoadAbort(error, controller.signal)) { aborted = true; break; }
+        console.warn("Qiaomu Reader: book tags stopped", error);
+        failedName = file.basename;
+        break;
+      }
+    }
+  } finally {
+    progress.finish();
+  }
+  if (needsAi && !proposals.length) {
+    openPluginAiSettings(app, plugin);
+    return;
+  }
+  if (!proposals.length) {
+    if (aborted) return;
+    if (failedName) new Notice(qiaomuReaderTranslate("tag-stop-0", failedName));
+    else if (list.length === 1) new Notice(qiaomuReaderTranslate("tag-no-text"));
+    else if (skipped) new Notice(qiaomuReaderTranslate("tag-skip-0", skipped));
+    else new Notice(qiaomuReaderTranslate("tag-empty"));
+    return;
+  }
+  new BookTagReviewModal(app, plugin, proposals, { skipped, failedName, needsAi, refresh }).open();
+}
+
+class BookTagProgressModal extends Modal {
+  constructor(app, controller, total) {
+    super(app);
+    this._controller = controller;
+    this._total = total;
+    this._finished = false;
+  }
+  onOpen() {
+    this.setTitle(qiaomuReaderTranslate("tag-wait"));
+    this._line = this.contentEl.createDiv({
+      cls: "qiaomu-reader-book-tags-progress",
+      text: qiaomuReaderTranslate("tag-n", 0, this._total),
+    });
+    this.contentEl.createEl("button", { text: qiaomuReaderTranslate("cancel"), attr: { type: "button" } }).addEventListener("click", () => {
+      if (this._finished) return;
+      this._finished = true;
+      this._controller.abort();
+      this.close();
+    });
+  }
+  setCurrent(index, total, name) {
+    const progress = qiaomuReaderTranslate("tag-n", index, total);
+    this._line?.setText(name ? `${progress}  ${name}` : progress);
+  }
+  finish() {
+    if (this._finished) return;
+    this._finished = true;
+    this.close();
+  }
+  onClose() {
+    if (this._finished) return;
+    this._finished = true;
+    this._controller.abort();
+  }
+}
+
+class BookTagReviewModal extends Modal {
+  constructor(app, plugin, proposals, extra = {}) {
+    super(app);
+    this.plugin = plugin;
+    this._proposals = proposals;
+    this._extra = extra;
+  }
+  onOpen() {
+    this.setTitle(qiaomuReaderTranslate("tag-review"));
+    const notes = [];
+    if (this._proposals.some((item) => item.source === "metadata")) notes.push(qiaomuReaderTranslate("tag-book"));
+    if (this._proposals.some((item) => item.source === "ai")) notes.push(qiaomuReaderTranslate("tag-ai"));
+    if (this._extra.skipped) notes.push(qiaomuReaderTranslate("tag-skip-0", this._extra.skipped));
+    if (this._extra.failedName) notes.push(qiaomuReaderTranslate("tag-stop-0", this._extra.failedName));
+    if (this._extra.needsAi) notes.push(qiaomuReaderTranslate("ai-assistance-is-not-set-up"));
+    if (notes.length) this.contentEl.createDiv({ cls: "qiaomu-reader-book-tags-note", text: notes.join("\n") });
+    const list = this.contentEl.createDiv("qiaomu-reader-book-tags-list");
+    const inputs = [];
+    for (const item of this._proposals) {
+      const row = list.createDiv("qiaomu-reader-book-tags-row");
+      row.createDiv({ cls: "qiaomu-reader-book-tags-name", text: item.title });
+      const input = row.createEl("input", { attr: { type: "text" } });
+      input.value = (item.tags || []).join(", ");
+      inputs.push({ path: item.path, input });
+    }
+    const actions = this.contentEl.createDiv("qiaomu-reader-book-tags-actions");
+    const save = actions.createEl("button", { cls: "mod-cta", text: qiaomuReaderTranslate("save"), attr: { type: "button" } });
+    const cancel = actions.createEl("button", { text: qiaomuReaderTranslate("cancel"), attr: { type: "button" } });
+    cancel.addEventListener("click", () => this.close());
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      cancel.disabled = true;
+      try {
+        await this.plugin.setManyBookTags(inputs.map(({ path, input }) => [path, parseBookTags(input.value)]));
+        this.close();
+        this._extra.refresh?.();
+        new Notice(qiaomuReaderTranslate("tag-saved-0", inputs.length));
+      } catch (error) {
+        console.warn("Qiaomu Reader: book tags were not saved", error);
+        save.disabled = false;
+        cancel.disabled = false;
+        new Notice(qiaomuReaderTranslate("could-not-save-the-plugin-settings-check-vault-access"));
+      }
+    });
+  }
+}
 
 const LibraryModal = class extends Modal {
   constructor(app, plugin) {
@@ -11371,6 +11601,7 @@ const LibraryModal = class extends Modal {
       this.plugin.settings.libCategory = selected = c.id;
       await this.plugin._saveLocalData(); drawChipRow(); redraw(input.value);
     };
+    this._selectLibChip = (id) => activateChip({ id });
     drawChipRow();
     input.addEventListener("input", () => redraw(input.value));
     redraw("");
@@ -11434,6 +11665,15 @@ const LibraryModal = class extends Modal {
     const searchIcon = search.createDiv("qiaomu-reader-lib-search-ic");
     svgIcon(searchIcon, "search");
     const input = search.createEl("input", { cls: "qiaomu-reader-lib-search-input", attr: { type: "text", placeholder: qiaomuReaderTranslate("search-a-book"), spellcheck: "false" } });
+    const generate = tools.createEl("button", { cls: "qiaomu-reader-lib-taggen", text: qiaomuReaderTranslate("tag-make"), attr: { type: "button" } });
+    generate.addEventListener("click", () => {
+      const folder = qiaomuReaderPath(this.plugin.settings.booksFolder);
+      const files = this._libVaultBooks(folder);
+      const untagged = files.filter((file) => !bookTagsOf(this.plugin.settings, file.path).length);
+      if (!files.length) { new Notice(qiaomuReaderTranslate("no-books")); return; }
+      if (!untagged.length) { new Notice(qiaomuReaderTranslate("tag-none")); return; }
+      void runBookTagging(this.app, this.plugin, untagged, () => this._refresh());
+    });
     return { input };
   }
   _libVaultBooks(folder) {
@@ -11665,6 +11905,9 @@ const LibraryModal = class extends Modal {
           openCalibreShowBook(libraryPath, rec.id);
         }));
       }
+      menu.addItem((it) => it.setTitle(qiaomuReaderTranslate("tag-make")).setIcon("tag").onClick(() => {
+        void runBookTagging(this.app, this.plugin, [file], () => this._refresh());
+      }));
       menu.addSeparator(); removeItem(menu);
       menu.showAtMouseEvent(ev);
     };
@@ -11703,6 +11946,18 @@ const LibraryModal = class extends Modal {
     if (noteCount > 0) {
       if (meta.textContent) meta.append(docOf(meta).createTextNode(" · "));
       meta.createSpan({ cls: "qiaomu-reader-lib-note-count", text: qiaomuReaderTranslate("library-note-count", noteCount) });
+    }
+    const cardTags = bookTagsOf(this.plugin.settings, bookPath).slice(0, 3);
+    if (cardTags.length) {
+      const tagRow = info.createDiv("qiaomu-reader-lib-tags");
+      for (const tag of cardTags) {
+        const button = tagRow.createEl("button", { cls: "qiaomu-reader-lib-tag", text: tag, attr: { type: "button" } });
+        button.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          this._selectLibChip?.(`tag:${tag}`);
+        });
+      }
     }
     const quick = cover.createDiv("qiaomu-reader-lib-quick");
     const stopCard = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
@@ -11745,7 +12000,7 @@ const LibraryModal = class extends Modal {
     };
     card.addEventListener("pointerdown", (ev) => {
       if (ev.pointerType === "mouse" || ev.button !== 0) return;
-      if (ev.target.closest(".qiaomu-reader-lib-action, .qiaomu-reader-lib-morebtn")) return;
+      if (ev.target.closest(".qiaomu-reader-lib-action, .qiaomu-reader-lib-morebtn, .qiaomu-reader-lib-tag")) return;
       window.clearTimeout(holdTimer);
       holdTimer = window.setTimeout(revealActions, 450);
     });
