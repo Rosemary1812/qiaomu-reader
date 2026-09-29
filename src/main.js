@@ -4,6 +4,7 @@ import { STARTER_BOOKS } from "./starter-book-data.js";
 import { createStarterLibraryInstaller, findStarterBook } from "./starter-library.js";
 import { isNonChineseSource } from "./ai-source-language.js";
 import { createEnglishGlossLayer, englishGlossViewport, englishSelectionKind, loadEnglishDictionary, lookupEnglishWord, visibleEnglishWords } from "./english-reading.js";
+import { ankiInvoke, buildVocabRecord, ensureAnkiVocabModel, markVocabAnkiId, parseVocabNote, pushVocabToAnki, upsertVocabRecord, vocabContextGloss, vocabDeckName, vocabularyNotePath } from "./vocab.js";
 import { HL_COLOR_SWATCHES } from "./highlight-colors.js";
 /*
  * Qiaomu Reader — source.
@@ -103,7 +104,7 @@ const DEFAULT_APPEARANCE = {
 };
 const DEFAULT_TRANSLATION = {
   translateEnabled: false, translateTo: "zh-CN",
-  englishGlossEnabled: false, englishCefrLevel: "B1", englishAutoTranslate: true,
+  englishGlossEnabled: false, englishCefrLevel: "B1", englishAutoTranslate: true, vocabAnkiDeck: "",
 };
 const DEFAULT_LIBRARY_UI = {
   bookNoteLinks: {}, locationMarks: [], bookNotePrompted: {},
@@ -804,7 +805,7 @@ function attachEngineChrome(view, doc, index) {
           if (cfi) view._englishLastSelection = `${view.file.path}:${cfi}:${selection.toString()}`;
           void englishSelectionResult(view, doc, selection.toString().trim(), {
             left: rect.left + (frame?.left || 0), bottom: rect.bottom + (frame?.top || 0),
-          }, "word");
+          }, "word", cfi || "");
         }
       }
     });
@@ -1914,6 +1915,14 @@ const QiaomuBookReader = class extends Plugin {
       {
         id: "open-book-picker", name: qiaomuReaderTranslate("open-a-book"),
         callback: () => { new BookQuickOpen(this.app, this).open(); },
+      },
+      {
+        id: "sync-vocabulary-anki", name: englishReadingLabel("同步生词到 Anki", "Sync vocabulary to Anki"),
+        checkCallback: (probe) => {
+          if (!Platform.isDesktopApp) return false;
+          if (!probe) void syncVocabularyNote(this);
+          return true;
+        },
       },
       {
         id: "add-from-calibre", name: qiaomuReaderTranslate("add-from-calibre"),
@@ -4595,33 +4604,208 @@ function englishCard(view, rect, title, message) {
   const body = card.createDiv({ cls: "qiaomu-reader-english-card-body", text: message });
   return { card, body };
 }
-async function englishSelectionResult(view, doc, text, rect, kind) {
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(Object.assign(new Error("AnkiConnect unavailable"), { anki: true })), ms);
+    Promise.resolve(promise).then(
+      (value) => { window.clearTimeout(timer); resolve(value); },
+      (error) => { window.clearTimeout(timer); reject(error); },
+    );
+  });
+}
+function ankiPost(options) {
+  return requestUrl({ url: options.url, method: "POST", headers: options.headers, body: options.body, throw: false }).then((res) => {
+    if (!res || res.status < 200 || res.status >= 300) throw Object.assign(new Error("AnkiConnect unavailable"), { anki: true });
+    return res;
+  }).catch((error) => {
+    if (error?.anki) throw error;
+    throw Object.assign(new Error("AnkiConnect unavailable"), { anki: true });
+  });
+}
+function ankiCaller() {
+  return (action, params) => withTimeout(
+    ankiInvoke(ankiPost, action, params),
+    action === "addNote" || action === "updateNoteFields" || action === "createModel" ? 8000 : 1500,
+  );
+}
+function enqueueVocab(plugin, task) {
+  const previous = plugin._vocabChain || Promise.resolve();
+  const run = previous.then(task, task);
+  plugin._vocabChain = run.then(() => {}, () => {});
+  return run;
+}
+function vocabSaveNotice(result, deck) {
+  if (result.ankiError?.message === "model-mismatch") {
+    return englishReadingLabel("已收入生词本。Anki 里的笔记类型「英文生词」字段不一致，没有写入卡片。", "Saved to the vocabulary note. The Anki note type “英文生词” has different fields, so no card was written.");
+  }
+  if (result.synced && result.status === "exists") {
+    return englishReadingLabel(`已写入 Anki 牌组「${deck}」。`, `Added to the Anki deck “${deck}”.`);
+  }
+  if (result.synced) {
+    return englishReadingLabel(`已收入生词本，并写入 Anki 牌组「${deck}」。`, `Saved to the vocabulary note and the Anki deck “${deck}”.`);
+  }
+  if (result.status === "exists" && !result.ankiError) {
+    return englishReadingLabel("这个词已在生词本。", "This word is already in the vocabulary note.");
+  }
+  return englishReadingLabel("已收入生词本。打开桌面版 Anki 并安装 AnkiConnect 后，用命令「同步生词到 Anki」生成卡片。", "Saved to the vocabulary note. Open Anki desktop with AnkiConnect, then run “Sync vocabulary to Anki”.");
+}
+async function writeEnglishVocab(plugin, record) {
+  const path = qiaomuReaderPath(vocabularyNotePath(plugin._dataFolder()));
+  const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+  if (folder && !plugin.app.vault.getAbstractFileByPath(folder)) await plugin.app.vault.createFolder(folder).catch(() => {});
+  let file = plugin.app.vault.getAbstractFileByPath(path);
+  if (file && !(file instanceof TFile)) throw new Error("vocabulary-path");
+  const before = file ? await plugin.app.vault.read(file) : "";
+  const saved = upsertVocabRecord(before, record);
+  const markdown = saved.markdown;
+  if (saved.status === "added") {
+    if (file) await plugin.app.vault.modify(file, markdown);
+    else file = await plugin.app.vault.create(path, markdown);
+  }
+  const target = saved.record;
+  if (target.anki || !Platform.isDesktopApp) return { status: saved.status, synced: false, ankiError: null, record: target };
+  let id;
+  try {
+    const invoke = ankiCaller();
+    await ensureAnkiVocabModel(invoke);
+    id = await pushVocabToAnki(invoke, target, vocabDeckName(plugin.settings.vocabAnkiDeck));
+  } catch (error) {
+    return { status: saved.status, synced: false, ankiError: error, record: target };
+  }
+  try {
+    const current = plugin.app.vault.getAbstractFileByPath(path);
+    if (current instanceof TFile) {
+      const latest = await plugin.app.vault.read(current);
+      const marked = markVocabAnkiId(latest, target.lemma, id);
+      if (marked !== latest) await plugin.app.vault.modify(current, marked);
+    }
+  } catch (error) {
+    console.warn("Qiaomu Reader: saved the Anki card but could not store its id", error);
+  }
+  return { status: saved.status, synced: true, ankiError: null, record: { ...target, anki: id } };
+}
+function saveEnglishVocab(view, record) {
+  return enqueueVocab(view.plugin, () => writeEnglishVocab(view.plugin, record));
+}
+async function syncVocabularyNote(plugin) {
+  const path = qiaomuReaderPath(vocabularyNotePath(plugin._dataFolder()));
+  const file = plugin.app.vault.getAbstractFileByPath(path);
+  if (!(file instanceof TFile)) {
+    new Notice(englishReadingLabel("生词本还是空的。", "The vocabulary note is empty."));
+    return;
+  }
+  await enqueueVocab(plugin, async () => {
+    const current = plugin.app.vault.getAbstractFileByPath(path);
+    if (!(current instanceof TFile)) return;
+    const markdown = await plugin.app.vault.read(current);
+    const records = parseVocabNote(markdown);
+    const deck = vocabDeckName(plugin.settings.vocabAnkiDeck);
+    if (!records.length) {
+      new Notice(englishReadingLabel("生词本还是空的。", "The vocabulary note is empty."));
+      return;
+    }
+    let synced = 0;
+    let failed = 0;
+    let mismatch = false;
+    try {
+      const invoke = ankiCaller();
+      await ensureAnkiVocabModel(invoke);
+      for (const record of records) {
+        try {
+          const latestFile = plugin.app.vault.getAbstractFileByPath(path);
+          const fresh = latestFile instanceof TFile
+            ? parseVocabNote(await plugin.app.vault.read(latestFile)).find((item) => item.lemma === record.lemma) || record
+            : record;
+          const id = await pushVocabToAnki(invoke, fresh, deck);
+          if (latestFile instanceof TFile) {
+            const after = await plugin.app.vault.read(latestFile);
+            const marked = markVocabAnkiId(after, fresh.lemma, id);
+            if (marked !== after) await plugin.app.vault.modify(latestFile, marked);
+          }
+          synced += 1;
+        } catch (error) {
+          failed += 1;
+          console.warn("Qiaomu Reader: could not sync a vocabulary card", error);
+        }
+      }
+    } catch (error) {
+      mismatch = error?.message === "model-mismatch";
+      if (!mismatch) failed = records.length;
+      console.warn("Qiaomu Reader: could not reach Anki", error);
+    }
+    if (mismatch) {
+      new Notice(englishReadingLabel("Anki 里的笔记类型「英文生词」字段不一致，没有写入卡片。", "The Anki note type “英文生词” has different fields, so no cards were written."));
+      return;
+    }
+    if (!synced) {
+      new Notice(englishReadingLabel("没能连上 Anki。请打开桌面版 Anki 并安装 AnkiConnect。", "Could not reach Anki. Open Anki desktop and install AnkiConnect."));
+      return;
+    }
+    if (failed) {
+      new Notice(englishReadingLabel(`已同步 ${synced} 条到「${deck}」，还有 ${failed} 条没有写入。`, `Synced ${synced} to “${deck}”. ${failed} still need Anki.`));
+      return;
+    }
+    new Notice(englishReadingLabel(`已同步 ${synced} 条到 Anki 牌组「${deck}」。`, `Synced ${synced} to the Anki deck “${deck}”.`));
+  });
+}
+async function englishSelectionResult(view, doc, text, rect, kind, location = "") {
   if (view.file?.extension !== "epub") return;
   const token = view._englishResultToken = (view._englishResultToken || 0) + 1;
   const { card, body } = englishCard(view, rect, kind === "word" ? text : englishReadingLabel("选文翻译", "Selection translation"), kind === "word" ? englishReadingLabel("正在查词…", "Looking up…") : englishReadingLabel("正在生成…", "Generating…"));
   if (kind === "word") {
+    const paragraph = doc.getSelection()?.anchorNode?.parentElement?.closest("p,li,blockquote")?.textContent || "";
+    let entry = null;
+    let dictionaryReady = false;
     try {
       const dictionary = await loadEnglishDictionary();
       if (token !== view._englishResultToken || !card.isConnected) return;
-      const entry = lookupEnglishWord(dictionary, text);
+      dictionaryReady = true;
+      entry = lookupEnglishWord(dictionary, text);
       body.setText(entry ? `${entry.lemma !== text.toLowerCase() ? `${text} → ${entry.lemma}\n` : ""}${entry.senses.map(([pos, meaning]) => `${pos ? `${pos}. ` : ""}${meaning}`).join("\n")}` : englishReadingLabel("本地词典未收录这个词。", "This word is not in the offline dictionary."));
-      if (aiSetupState(view.plugin).enabled) {
-        const context = String(doc.getSelection()?.anchorNode?.parentElement?.closest("p,li,blockquote")?.textContent || "").slice(0, 450);
-        const explain = card.createEl("button", { cls: "qiaomu-reader-english-context-button", text: englishReadingLabel("结合上下文解释", "Explain in context"), attr: { type: "button" } });
-        explain.addEventListener("click", async () => {
-          explain.disabled = true;
-          const detail = card.createDiv({ cls: "qiaomu-reader-english-card-body", text: englishReadingLabel("正在生成…", "Generating…") });
-          try {
-            const result = await englishAiTask(view.plugin, `请根据上下文解释英文单词“${text}”在这里的意思，只输出简体中文短释。\n上下文：${context}`);
-            if (token === view._englishResultToken && card.isConnected) detail.setText(result);
-          } catch (error) {
-            if (token === view._englishResultToken && card.isConnected) detail.setText(`${englishReadingLabel("解释失败", "Explanation failed")}：${error.message || ""}`);
-          } finally { explain.disabled = false; }
-        });
-      }
     } catch {
-      if (token === view._englishResultToken && card.isConnected) body.setText(englishOfflineDataError());
+      if (token !== view._englishResultToken || !card.isConnected) return;
+      body.setText(englishOfflineDataError());
     }
+    if (token !== view._englishResultToken || !card.isConnected) return;
+    const actions = card.createDiv("qiaomu-reader-english-actions");
+    if (dictionaryReady && aiSetupState(view.plugin).enabled) {
+      const context = String(paragraph).slice(0, 450);
+      const explain = actions.createEl("button", { cls: "qiaomu-reader-english-context-button", text: englishReadingLabel("结合上下文解释", "Explain in context"), attr: { type: "button" } });
+      explain.addEventListener("click", async () => {
+        explain.disabled = true;
+        const detail = card.createDiv({ cls: "qiaomu-reader-english-card-body qiaomu-reader-english-context-result", text: englishReadingLabel("正在生成…", "Generating…") });
+        card.insertBefore(detail, actions);
+        try {
+          const result = await englishAiTask(view.plugin, `请根据上下文解释英文单词“${text}”在这里的意思，只输出简体中文短释。\n上下文：${context}`);
+          if (token === view._englishResultToken && card.isConnected) detail.setText(result);
+        } catch (error) {
+          if (token === view._englishResultToken && card.isConnected) detail.setText(`${englishReadingLabel("解释失败", "Explanation failed")}：${error.message || ""}`);
+        } finally { explain.disabled = false; }
+      });
+    }
+    const save = actions.createEl("button", { cls: "qiaomu-reader-english-context-button", text: englishReadingLabel("收入生词本", "Save to vocabulary"), attr: { type: "button" } });
+    save.addEventListener("click", () => {
+      if (save.disabled) return;
+      const vocabRecord = buildVocabRecord({
+        surface: text,
+        entry,
+        sentence: paragraph,
+        contextGloss: vocabContextGloss(card.querySelector(".qiaomu-reader-english-context-result")?.textContent),
+        bookPath: view.file?.path || "",
+        bookTitle: view.file?.basename || "",
+        location,
+      });
+      if (!vocabRecord) return;
+      save.disabled = true;
+      void saveEnglishVocab(view, vocabRecord).then((result) => {
+        if (card.isConnected) save.setText(englishReadingLabel("已在生词本", "In vocabulary"));
+        new Notice(vocabSaveNotice(result, vocabDeckName(view.plugin.settings.vocabAnkiDeck)));
+      }).catch((error) => {
+        console.warn("Qiaomu Reader: could not save vocabulary", error);
+        if (card.isConnected) save.disabled = false;
+        new Notice(englishReadingLabel("无法写入生词本，请检查仓库权限。", "Could not write the vocabulary note. Check the vault permissions."));
+      });
+    });
     return;
   }
   if (!aiSetupState(view.plugin).enabled) {
@@ -4647,7 +4831,7 @@ function scheduleEnglishSelection(view, doc, text, rect, cfi) {
     const kind = englishSelectionKind(text);
     if (!kind || (kind === "passage" && view.plugin.settings.englishAutoTranslate === false) || view._englishLastSelection === key) return;
     view._englishLastSelection = key;
-    void englishSelectionResult(view, doc, text.trim(), rect, kind);
+    void englishSelectionResult(view, doc, text.trim(), rect, kind, cfi || "");
   }, 320);
 }
 function clearEnglishSelection(view) {
@@ -8622,6 +8806,12 @@ const ReadSettingsModal = class extends Modal {
       .setDesc(englishReadingLabel("拖选英文句子或段落后生成中文译文；选中单词始终使用本地词典。", "Translate selected sentences or passages with AI; selected words use the offline dictionary."))
       .addToggle(toggle => toggle.setValue(settings.englishAutoTranslate !== false).onChange(async value => {
         settings.englishAutoTranslate = value; await view.plugin.saveAll();
+      }));
+    new Setting(colA).setName(englishReadingLabel("Anki 牌组", "Anki deck"))
+      .setDesc(englishReadingLabel("收入生词本时写入这个牌组。留空则使用「生词本」。", "Words are saved into this deck. Leave blank to use “生词本”."))
+      .addText((text) => text.setPlaceholder("生词本").setValue(settings.vocabAnkiDeck || "").onChange(async (value) => {
+        settings.vocabAnkiDeck = String(value || "").replace(/[\r\n]/g, "");
+        await view.plugin.saveAll();
       }));
   }
   _fillPdfScale(colA, view) {

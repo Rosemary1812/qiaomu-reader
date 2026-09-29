@@ -7,6 +7,7 @@ This file records user-visible changes in the unofficial enhanced fork maintaine
 ### Fork enhancements
 
 - Added offline English word lookup and optional page glosses; longer selections can still use AI assistance.
+- English word cards can save a word to the vault vocabulary note and, when Anki desktop is open, to the deck 生词本. Phone reading keeps the note and syncs cards later from the desktop.
 - Added continuous EPUB scrolling across chapter boundaries and stabilized downward scrolling from book covers.
 - Highlighted the current chapter in the contents panel.
 - Added Vim-style reader navigation, Windows shortcut handling, and the OpenDyslexic reading font.
