@@ -93,12 +93,13 @@ export function englishGlossViewport(doc, readingArea) {
 // another are dropped, and a click opens the same dictionary card as a word.
 const GLOSS_CHAR_PX = 11;
 const GLOSS_HEIGHT_PX = 14;
+const GLOSS_WORD_OFFSET_PX = 4;
 const SENTENCE_BLOCK = "p,li,blockquote,h1,h2,h3,h4,h5,h6,td,figcaption";
 
 export function glossLabelBox(rect, gloss) {
   const width = Math.max(GLOSS_CHAR_PX, [...String(gloss)].length * GLOSS_CHAR_PX);
   const center = rect.left + rect.width / 2;
-  const bottom = rect.top - 1;
+  const bottom = rect.top + GLOSS_WORD_OFFSET_PX;
   return { left: center - width / 2, right: center + width / 2, top: bottom - GLOSS_HEIGHT_PX, bottom };
 }
 
@@ -197,7 +198,7 @@ export function createEnglishGlossLayer(doc, overlayer) {
           const label = doc.createElementNS("http://www.w3.org/2000/svg", "text");
           label.textContent = entry.gloss;
           label.setAttribute("x", String(rect.left + rect.width / 2));
-          label.setAttribute("y", String(rect.top - 3));
+          label.setAttribute("y", String(rect.top + GLOSS_WORD_OFFSET_PX - 2));
           label.setAttribute("pointer-events", "auto");
           if (entry.word) label.setAttribute("data-word", entry.word);
           bindGlossClick(label, entry.word, onActivate);
@@ -222,7 +223,7 @@ export function createEnglishGlossLayer(doc, overlayer) {
         label.className = "gloss";
         label.textContent = entry.gloss;
         label.style.left = `${rect.left + rect.width / 2}px`;
-        label.style.top = `${rect.top - 1}px`;
+        label.style.top = `${rect.top + GLOSS_WORD_OFFSET_PX}px`;
         bindGlossClick(label, entry.word, onActivate);
         shadow.append(label);
       }
