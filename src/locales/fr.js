@@ -42,6 +42,7 @@ export default {
   "library-delete-collection": "Supprimer la collection",
   "library-delete-collection-body": "Retire « {0} » de l’étagère. Les fichiers restent.",
   "library-add-to-collection": "Ajouter à la collection",
+  "library-manage-collection-books": "Add / manage books",
   "library-collection-empty": "Aucun livre dans cette collection.",
   "library-collection-exists": "Ce nom est déjà pris",
   "could-not-open-the-book": "Impossible d’ouvrir le livre",

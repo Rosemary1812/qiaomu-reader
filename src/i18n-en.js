@@ -42,6 +42,7 @@ export const QIAOMU_READER_EN = {
   "library-delete-collection": "Delete collection",
   "library-delete-collection-body": "Remove “{0}” from the shelf. Book files stay where they are.",
   "library-add-to-collection": "Add to collection",
+  "library-manage-collection-books": "Add / manage books",
   "library-collection-empty": "No books in this collection yet.",
   "library-collection-exists": "That name is already used",
   "could-not-open-the-book": "Could not open the book",

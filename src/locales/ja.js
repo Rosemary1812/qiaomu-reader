@@ -42,6 +42,7 @@ export default {
   "library-delete-collection": "コレクションを削除",
   "library-delete-collection-body": "本棚から「{0}」を外します。ファイルは動きません。",
   "library-add-to-collection": "コレクションへ追加",
+  "library-manage-collection-books": "Add / manage books",
   "library-collection-empty": "このコレクションに本はありません。",
   "library-collection-exists": "同じ名前があります",
   "could-not-open-the-book": "本を開けませんでした",

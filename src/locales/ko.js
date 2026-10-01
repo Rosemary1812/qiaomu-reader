@@ -42,6 +42,7 @@ export default {
   "library-delete-collection": "모음 삭제",
   "library-delete-collection-body": "책장에서 「{0}」만 없앱니다. 파일은 그대로입니다.",
   "library-add-to-collection": "모음에 넣기",
+  "library-manage-collection-books": "Add / manage books",
   "library-collection-empty": "이 모음에는 책이 없습니다.",
   "library-collection-exists": "같은 이름이 있습니다",
   "could-not-open-the-book": "책을 열 수 없습니다",

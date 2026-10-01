@@ -1590,6 +1590,14 @@ button.qiaomu-reader-find-item.qiaomu-reader-toc-active { background: var(--back
 
 .qiaomu-reader-english-card .qiaomu-reader-sr-only, .qiaomu-reader-lib-chip-more .qiaomu-reader-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
 
+.qiaomu-reader-collection-book-list { max-height: 50vh; overflow-y: auto; }
+.qiaomu-reader-collection-manage { grid-column: 1 / -1; justify-self: start; }
+
+.qiaomu-reader-collection-search { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 13px; color: var(--text-muted); }
+.qiaomu-reader-collection-search input.qiaomu-reader-collection-search-input { width: 100%; min-width: 0; height: 36px; box-sizing: border-box; padding: 7px 10px; border: 1px solid var(--background-modifier-border); border-radius: 6px; background: var(--background-primary); color: var(--text-normal); font-size: 14px; }
+.qiaomu-reader-collection-search-input:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.qiaomu-reader-collection-books > button { align-self: flex-end; }
+
 /* BUNDLED FONT PROVENANCE
 # Offline reading fonts
 

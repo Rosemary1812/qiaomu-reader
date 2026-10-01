@@ -42,6 +42,7 @@ export default {
   "library-delete-collection": "Sammlung löschen",
   "library-delete-collection-body": "Entfernt „{0}“ nur aus dem Regal. Dateien bleiben.",
   "library-add-to-collection": "Zur Sammlung",
+  "library-manage-collection-books": "Add / manage books",
   "library-collection-empty": "Noch keine Bücher in dieser Sammlung.",
   "library-collection-exists": "Dieser Name ist vergeben",
   "could-not-open-the-book": "Das Buch konnte nicht geöffnet werden",

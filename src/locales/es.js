@@ -42,6 +42,7 @@ export default {
   "library-delete-collection": "Eliminar colección",
   "library-delete-collection-body": "Quita «{0}» de la estantería. Los archivos no se mueven.",
   "library-add-to-collection": "Añadir a colección",
+  "library-manage-collection-books": "Add / manage books",
   "library-collection-empty": "Esta colección no tiene libros.",
   "library-collection-exists": "Ese nombre ya existe",
   "could-not-open-the-book": "No se pudo abrir el libro",

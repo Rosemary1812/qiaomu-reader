@@ -44,6 +44,7 @@ export const QIAOMU_READER_ZH_CN = {
   "library-delete-collection": "删除合集",
   "library-delete-collection-body": "只从书架去掉「{0}」，不移动书。",
   "library-add-to-collection": "加入合集",
+  "library-manage-collection-books": "添加 / 管理书籍",
   "library-collection-empty": "这个合集里还没有书。",
   "library-collection-exists": "已经有同名合集",
   "could-not-open-the-book": "无法打开这本书",

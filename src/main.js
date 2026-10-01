@@ -1954,9 +1954,15 @@ const QiaomuBookReader = class extends Plugin {
     for (const command of laterCommands) this.addCommand(command);
   }
   _registerPdfFileMenu() {
-    const onFileMenu = (menu, file) => {
-      if (!(file instanceof TFile) || file.extension !== "pdf") return;
-      menu.addItem((item) => item.setTitle(qiaomuReaderTranslate("open-in-book-reader")).setIcon("book-open").onClick(() => this.openFile(file)));
+    const onFileMenu = (menu, file, source) => {
+      if (!(file instanceof TFile) || !BOOK_EXTENSIONS.has(file.extension)) return;
+      if (file.extension === "pdf") menu.addItem((item) => item.setTitle(qiaomuReaderTranslate("open-in-book-reader")).setIcon("book-open").onClick(() => this.openFile(file)));
+      if (source === "qiaomu-reader") return;
+      menu.addItem(item => item.setTitle(qiaomuReaderTranslate("library-add-to-collection")).setIcon("library").onClick(() => {
+        new CollectionMembershipModal(this.app, this, file, () => {
+          for (const leaf of this.app.workspace.getLeavesOfType("qiaomu-reader-library")) leaf.view?._refresh?.();
+        }).open();
+      }));
     };
     this.registerEvent(this.app.workspace.on("file-menu", onFileMenu));
   }
@@ -11274,36 +11280,13 @@ function libSubfolderCounts(bookFiles, booksFolder, openFolder) {
   return subs;
 }
 function buildLibChips(bookFiles, booksFolder, getProgress, getTags, activeChip, collections) {
-  const { statuses, folders, tags } = libTallyBooks(bookFiles, booksFolder, getProgress, getTags);
+  const { statuses, tags } = libTallyBooks(bookFiles, booksFolder, getProgress, getTags);
   const chips = [{ id: "all", label: qiaomuReaderTranslate("all"), count: bookFiles.length }];
   for (const def of LIB_STATUS_CHIPS) {
     if (statuses[def.key]) chips.push({ id: def.id, label: qiaomuReaderTranslate(def.text), count: statuses[def.key] });
   }
   for (const t of [...tags.keys()].sort((a, b) => a.localeCompare(b, "ru"))) {
     chips.push({ id: "tag:" + t, label: t, count: tags.get(t) });
-  }
-  const named = [...folders.entries()]
-    .filter(([c]) => c)
-    .sort((x, y) => x[0].localeCompare(y[0], "ru"));
-  const openFolder = activeChip && activeChip.startsWith("folder:")
-    ? activeChip.slice(7)
-    : null;
-  const subs = libSubfolderCounts(bookFiles, booksFolder, openFolder);
-  const showFolders = named.length > 1 || (named.length === 1 && folders.has(""));
-  if (showFolders) {
-    for (const [group, total] of named) {
-      chips.push({ id: "folder:" + group, label: group, count: total });
-      const expandable = openFolder === group && subs.size > 1;
-      if (expandable) {
-        const sortedSubs = [...subs.entries()].sort((x, y) => x[0].localeCompare(y[0], "ru"));
-        for (const [sub, sn] of sortedSubs) {
-          const subLabel = "└ " + sub.slice(group.length + 1);
-          chips.push({ id: "folder:" + sub, label: subLabel, count: sn, sub: true });
-        }
-      }
-    }
-    const unfiled = folders.get("");
-    if (unfiled) chips.push({ id: "folder:", label: qiaomuReaderTranslate("no-folder"), count: unfiled });
   }
   for (const collection of normalizeCollections(collections)) {
     const count = bookFiles.reduce((sum, file) => sum + (collection.books.includes(file.path) ? 1 : 0), 0);
@@ -11399,6 +11382,50 @@ const CollectionNameModal = class extends Modal {
       if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); void run(); }
     });
     qiaomuReaderAutoFocus(input);
+  }
+  onClose() { this.contentEl.empty(); }
+};
+
+const CollectionBooksModal = class extends Modal {
+  constructor(app, plugin, collection, files, onChange) {
+    super(app);
+    Object.assign(this, { plugin, collection, files, onChange });
+  }
+  onOpen() {
+    const c = this.contentEl;
+    c.addClass("qiaomu-reader-collections", "qiaomu-reader-collection-books");
+    c.createEl("h3", { text: this.collection.name });
+    const label = c.createEl("label", { cls: "qiaomu-reader-collection-search" });
+    label.createSpan({ text: qiaomuReaderTranslate("search-a-book") });
+    const search = label.createEl("input", { cls: "qiaomu-reader-collection-search-input", attr: { type: "search" } });
+    const list = c.createDiv("qiaomu-reader-collection-list");
+    list.addClass("qiaomu-reader-collection-book-list");
+    const selected = new Set(this.collection.books);
+    const draw = () => {
+      list.empty();
+      for (const file of this.files.filter(f => f.basename.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase()))) {
+        const row = list.createEl("label", { cls: "qiaomu-reader-collection-choice" });
+        const box = row.createEl("input", { attr: { type: "checkbox" } });
+        box.checked = selected.has(file.path);
+        row.createSpan({ text: file.basename });
+        box.addEventListener("change", () => { if (box.checked) selected.add(file.path); else selected.delete(file.path); });
+      }
+    };
+    search.addEventListener("input", draw);
+    draw();
+    const error = c.createDiv({ attr: { role: "alert" } });
+    const save = c.createEl("button", { text: qiaomuReaderTranslate("save") });
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      const collections = normalizeCollections(this.plugin.settings.libraryCollections).map(item => item.id === this.collection.id ? { ...item, books: [...selected] } : item);
+      if (!await commitShelfPrefs(this.plugin, { libraryCollections: collections })) {
+        error.setText(qiaomuReaderTranslate("saving-failed-check-vault-permissions-and-retry"));
+        save.disabled = false;
+        return;
+      }
+      this.onChange();
+      this.close();
+    });
   }
   onClose() { this.contentEl.empty(); }
 };
@@ -11521,6 +11548,11 @@ const LibraryModal = class extends Modal {
     const redraw = (query) => {
       grid.empty();
       grid.toggleClass("is-list", this._libLayout === "list");
+      if (this._libSelected.startsWith("collection:")) {
+        const add = grid.createEl("button", { text: qiaomuReaderTranslate("library-manage-collection-books") });
+        add.addClass("qiaomu-reader-collection-manage");
+        add.addEventListener("click", () => this._openCollectionBooks(this._libSelected.slice(11)));
+      }
       const shown = filterLibBooks(files, this._libSelected, query, folder, progressOf, tagsOf, collectionsOf())
         .filter(f => this._libSelected !== "study:highlights" || marked.has(f.path));
       if (shown.length === 0) {
@@ -11682,7 +11714,16 @@ const LibraryModal = class extends Modal {
       this._libSelected = chip;
       this._drawLibChips?.();
       this._redrawLib?.(this._searchInput?.value || "");
+      window.setTimeout(() => this._openCollectionBooks(result.collection.id), 0);
       return result;
+    }).open();
+  }
+  _openCollectionBooks(id) {
+    const collection = normalizeCollections(this.plugin.settings.libraryCollections).find(item => item.id === id);
+    if (!collection) return;
+    new CollectionBooksModal(this.app, this.plugin, collection, this._libVaultBooks(qiaomuReaderPath(this.plugin.settings.booksFolder)), () => {
+      this._drawLibChips?.();
+      this._redrawLib?.(this._searchInput?.value || "");
     }).open();
   }
   _openCollectionMembership(file) {
@@ -11696,6 +11737,7 @@ const LibraryModal = class extends Modal {
     const collection = normalizeCollections(this.plugin.settings.libraryCollections).find((item) => item.id === id);
     if (!collection) return;
     const menu = new Menu();
+    menu.addItem(it => it.setTitle(qiaomuReaderTranslate("library-manage-collection-books")).setIcon("book-plus").onClick(() => this._openCollectionBooks(id)));
     menu.addItem((it) => it.setTitle(qiaomuReaderTranslate("library-rename-collection")).setIcon("pencil").onClick(() => {
       new CollectionNameModal(this.app, qiaomuReaderTranslate("library-rename-collection"), collection.name, async (name) => {
         const result = renameCollection(this.plugin.settings.libraryCollections, id, name);

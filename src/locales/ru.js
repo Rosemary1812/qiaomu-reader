@@ -44,6 +44,7 @@ export default {
   "library-delete-collection": "Удалить подборку",
   "library-delete-collection-body": "Убирает «{0}» с полки. Файлы остаются.",
   "library-add-to-collection": "В подборку",
+  "library-manage-collection-books": "Add / manage books",
   "library-collection-empty": "В этой подборке нет книг.",
   "library-collection-exists": "Такое имя уже есть",
   "could-not-open-the-book": "Не удалось открыть книгу",
