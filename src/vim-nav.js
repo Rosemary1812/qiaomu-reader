@@ -23,7 +23,8 @@ export function isTypingTarget(el) {
 
 export function scrollStepPx(viewportH) {
   const h = Number(viewportH) || 0;
-  return Math.max(1, Math.round(h * 0.85));
+  // j/k are fine adjustments; Space handles full-viewport scrolling.
+  return Math.max(1, Math.min(48, Math.round(h * 0.1)));
 }
 
 /**

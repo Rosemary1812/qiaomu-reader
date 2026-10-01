@@ -8,6 +8,7 @@ This file records user-visible changes in the unofficial enhanced fork maintaine
 
 - Added offline English word lookup and optional page glosses; longer selections can still use AI assistance.
 - Shelf collections group books for browsing without moving their files, and the shelf can switch between the cover grid and a list.
+- English page glosses now include sentence-initial words, skip labels that would overlap, and open the dictionary card when clicked.
 - Added continuous EPUB scrolling across chapter boundaries and stabilized downward scrolling from book covers.
 - Highlighted the current chapter in the contents panel.
 - Added Vim-style reader navigation, Windows shortcut handling, and the OpenDyslexic reading font.

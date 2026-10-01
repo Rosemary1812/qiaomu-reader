@@ -803,6 +803,7 @@ function revealReaderChromeFromPage(view, e) {
 // iframe events do not bubble to the host's immersive chrome or tap zones.
 // Convert section coordinates before reusing the reader's navigation rules.
 function attachEngineChrome(view, doc, index) {
+  doc.addEventListener("pointerdown", () => view._englishCardDismiss?.(), true);
   if (view.file?.extension === "epub") {
     doc.addEventListener("dblclick", () => {
       const selection = doc.getSelection();
@@ -4599,16 +4600,39 @@ function englishAiTask(plugin, prompt, signal) {
   return aiExplain("", plugin, [{ role: "user", content: prompt }], "", { signal });
 }
 function englishCard(view, rect, title, message) {
+  view._englishCardDismiss?.();
   view._englishCard?.remove();
   const card = view.contentEl.createDiv("qiaomu-reader-english-card");
   view._englishCard = card;
   const bounds = view.contentEl.getBoundingClientRect();
   card.style.left = `${Math.max(12, Math.min(rect.left - bounds.left, bounds.width - 300))}px`;
   card.style.top = `${Math.max(12, Math.min(rect.bottom - bounds.top + 8, bounds.height - 135))}px`;
+  const listeners = [];
+  const dismiss = () => {
+    for (const doc of listeners) doc.removeEventListener("pointerdown", outside, true);
+    card.remove();
+    if (view._englishCard === card) {
+      view._englishCard = null;
+      view._englishCardDismiss = null;
+      view._englishLastSelection = null;
+    }
+  };
+  const outside = event => {
+    if (!event.composedPath().includes(card)) dismiss();
+  };
+  for (const doc of new Set([card.ownerDocument, ...(view.engine?.contents() || []).map(item => item.doc)])) {
+    doc.addEventListener("pointerdown", outside, true);
+    listeners.push(doc);
+  }
+  view._englishCardDismiss = dismiss;
   const heading = card.createDiv("qiaomu-reader-english-card-heading");
   heading.createSpan({ text: title });
-  const close = heading.createEl("button", { text: "×", attr: { type: "button", "aria-label": englishReadingLabel("关闭释义", "Close definition") } });
-  close.addEventListener("click", () => { card.remove(); if (view._englishCard === card) view._englishCard = null; });
+  const close = heading.createEl("button", { attr: { type: "button" } });
+  setIcon(close, "x");
+  const closeLabel = card.createSpan({ cls: "qiaomu-reader-sr-only", text: englishReadingLabel("关闭释义", "Close definition") });
+  closeLabel.id = `qiaomu-english-close-${view._englishResultToken}`;
+  close.setAttribute("aria-labelledby", closeLabel.id);
+  close.addEventListener("click", dismiss);
   const body = card.createDiv({ cls: "qiaomu-reader-english-card-body", text: message });
   return { card, body };
 }
@@ -4624,16 +4648,23 @@ async function englishSelectionResult(view, doc, text, rect, kind) {
       body.setText(entry ? `${entry.lemma !== text.toLowerCase() ? `${text} → ${entry.lemma}\n` : ""}${entry.senses.map(([pos, meaning]) => `${pos ? `${pos}. ` : ""}${meaning}`).join("\n")}` : englishReadingLabel("本地词典未收录这个词。", "This word is not in the offline dictionary."));
       if (aiSetupState(view.plugin).enabled) {
         const context = String(doc.getSelection()?.anchorNode?.parentElement?.closest("p,li,blockquote")?.textContent || "").slice(0, 450);
-        const explain = card.createEl("button", { cls: "qiaomu-reader-english-context-button", text: englishReadingLabel("结合上下文解释", "Explain in context"), attr: { type: "button" } });
+        const explain = card.createEl("button", { cls: "qiaomu-reader-english-context-button", attr: { type: "button" } });
+        const explainIcon = explain.createSpan({ attr: { "aria-hidden": "true" } });
+        setIcon(explainIcon, "sparkles");
+        const explainLabel = explain.createSpan({ text: englishReadingLabel("语境释义", "Explain in context") });
         explain.addEventListener("click", async () => {
           explain.disabled = true;
+          explainLabel.setText(englishReadingLabel("正在解释…", "Explaining…"));
           const detail = card.createDiv({ cls: "qiaomu-reader-english-card-body", text: englishReadingLabel("正在生成…", "Generating…") });
           try {
             const result = await englishAiTask(view.plugin, `请根据上下文解释英文单词“${text}”在这里的意思，只输出简体中文短释。\n上下文：${context}`);
             if (token === view._englishResultToken && card.isConnected) detail.setText(result);
           } catch (error) {
             if (token === view._englishResultToken && card.isConnected) detail.setText(`${englishReadingLabel("解释失败", "Explanation failed")}：${error.message || ""}`);
-          } finally { explain.disabled = false; }
+          } finally {
+            explain.disabled = false;
+            explainLabel.setText(englishReadingLabel("语境释义", "Explain in context"));
+          }
         });
       }
     } catch {
@@ -4668,6 +4699,7 @@ function scheduleEnglishSelection(view, doc, text, rect, cfi) {
   }, 320);
 }
 function clearEnglishSelection(view) {
+  view._englishCardDismiss?.();
   view._englishResultToken = (view._englishResultToken || 0) + 1;
   view._englishCard?.remove();
   view._englishCard = null;
@@ -4699,7 +4731,13 @@ async function refreshEnglishGlosses(view, doc) {
   try { items = visibleEnglishWords(doc, view.plugin.settings.englishCefrLevel || "B1", 28, viewport, dictionary); }
   catch { showEnglishGlossLoadError(view); return; }
   view._englishGlossErrorShown = false;
-  layer.draw(items.map(item => ({ range: item.range, gloss: lookupEnglishWord(dictionary, item.word)?.gloss })), viewport);
+  layer.draw(items.map(item => ({
+    range: item.range,
+    word: item.word,
+    gloss: lookupEnglishWord(dictionary, item.word)?.gloss,
+  })), viewport, (word, rect) => {
+    void englishSelectionResult(view, doc, word, rect, "word");
+  });
 }
 async function aiTestConnection(plugin) {
   const cfg = aiConfig(plugin);
@@ -11510,8 +11548,11 @@ const LibraryModal = class extends Modal {
           main.createSpan({ cls: "qiaomu-reader-lib-chip-n", text: String(c.count) });
           this._setAttrs(main, { role: "button", tabindex: "0", "aria-pressed": String(c.id === this._libSelected) });
           this._activateOnClick(main, () => activateChip(c));
-          const more = el.createEl("button", { cls: "qiaomu-reader-lib-chip-more", attr: { type: "button", "aria-label": qiaomuReaderTranslate("more") } });
+          const more = el.createEl("button", { cls: "qiaomu-reader-lib-chip-more", attr: { type: "button" } });
           svgIcon(more, "more");
+          const moreLabel = more.createSpan({ cls: "qiaomu-reader-sr-only", text: qiaomuReaderTranslate("more") });
+          moreLabel.id = `qbr-collection-more-${c.id.slice("collection:".length)}`;
+          more.setAttribute("aria-labelledby", moreLabel.id);
           const openMenu = (ev) => { ev.preventDefault(); ev.stopPropagation(); this._openCollectionMenu(c, ev); };
           more.addEventListener("click", openMenu);
           el.addEventListener("contextmenu", openMenu);
