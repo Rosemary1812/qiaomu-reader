@@ -64,6 +64,18 @@ import {
   readCoverDataUrl,
   readLibraryFile,
 } from "./calibre-library.js";
+import {
+  bookInCollection,
+  createCollection,
+  deleteCollection,
+  forgetCollectionBook,
+  libraryEmptyCopyKey,
+  libraryLayout,
+  normalizeCollections,
+  renameCollection,
+  retargetCollectionPaths,
+  setCollectionMember,
+} from "./library-collections.js";
 
 // Interface language is local to this plugin; dictionaries are bundled offline.
 let qiaomuReaderLanguage = "zh";
@@ -107,7 +119,7 @@ const DEFAULT_TRANSLATION = {
 };
 const DEFAULT_LIBRARY_UI = {
   bookNoteLinks: {}, locationMarks: [], bookNotePrompted: {},
-  syncMode: "auto", libCategory: "all",
+  syncMode: "auto", libCategory: "all", libLayout: "grid", libraryCollections: [],
 };
 const DEFAULT_READER_SESSION = {
   readerAdvOpen: false, readerHistOpen: false,
@@ -1956,6 +1968,11 @@ const QiaomuBookReader = class extends Plugin {
           this.settings.bookNoteLinks[book] = file.path + target.slice(oldPath.length);
           changed = true;
         }
+      }
+      const moved = retargetCollectionPaths(this.settings.libraryCollections, oldPath, file.path);
+      if (moved.changed) {
+        this.settings.libraryCollections = moved.collections;
+        changed = true;
       }
       if (changed) void this._saveLocalData();
     }));
@@ -9206,8 +9223,23 @@ function addBookFileMenu(app, menu, file) {
 async function dropBookState(plugin, bookPath) {
   const stores = [plugin.progress, plugin.progressBackups, plugin.highlights, plugin.settings?.coverFits];
   for (const store of stores) if (store) delete store[bookPath];
-  if (plugin.settings) forgetCalibreImportByPath(plugin.settings, bookPath);
+  if (plugin.settings) {
+    const forgotten = forgetCollectionBook(plugin.settings.libraryCollections, bookPath);
+    if (forgotten.changed) plugin.settings.libraryCollections = forgotten.collections;
+    forgetCalibreImportByPath(plugin.settings, bookPath);
+  }
   return plugin.saveAll();
+}
+async function commitShelfPrefs(plugin, changes) {
+  const settings = plugin.settings;
+  const previous = {};
+  for (const key of Object.keys(changes)) previous[key] = settings[key];
+  Object.assign(settings, changes);
+  if (await plugin._saveLocalData() === false) {
+    Object.assign(settings, previous);
+    return false;
+  }
+  return true;
 }
 function deleteBookFromVault(app, plugin, file, onDone) {
   if (!file) {
@@ -11241,7 +11273,7 @@ function libSubfolderCounts(bookFiles, booksFolder, openFolder) {
   }
   return subs;
 }
-function buildLibChips(bookFiles, booksFolder, getProgress, getTags, activeChip) {
+function buildLibChips(bookFiles, booksFolder, getProgress, getTags, activeChip, collections) {
   const { statuses, folders, tags } = libTallyBooks(bookFiles, booksFolder, getProgress, getTags);
   const chips = [{ id: "all", label: qiaomuReaderTranslate("all"), count: bookFiles.length }];
   for (const def of LIB_STATUS_CHIPS) {
@@ -11273,11 +11305,15 @@ function buildLibChips(bookFiles, booksFolder, getProgress, getTags, activeChip)
     const unfiled = folders.get("");
     if (unfiled) chips.push({ id: "folder:", label: qiaomuReaderTranslate("no-folder"), count: unfiled });
   }
+  for (const collection of normalizeCollections(collections)) {
+    const count = bookFiles.reduce((sum, file) => sum + (collection.books.includes(file.path) ? 1 : 0), 0);
+    chips.push({ id: `collection:${collection.id}`, label: collection.name, count, collection: true });
+  }
   return chips;
 }
-// Chip ids read "status:x", "folder:x" or "tag:x"; "folder:" with an empty
-// key selects the books sitting directly inside the library root folder.
-function libChipMatches(chipId, f, booksFolder, getProgress, getTags) {
+// Chip ids read "status:x", "folder:x", "tag:x" or "collection:id". "folder:"
+// with an empty key selects the books sitting directly inside the library root.
+function libChipMatches(chipId, f, booksFolder, getProgress, getTags, collections) {
   const colon = chipId.indexOf(":");
   if (colon < 0) return true;
   const kind = chipId.slice(0, colon);
@@ -11288,9 +11324,10 @@ function libChipMatches(chipId, f, booksFolder, getProgress, getTags) {
     return arg === "" ? here === "" : (here === arg || here.startsWith(arg + "/"));
   }
   if (kind === "tag") return (getTags ? getTags(f.path) : []).includes(arg);
+  if (kind === "collection") return bookInCollection(collections, arg, f.path);
   return true;
 }
-function filterLibBooks(bookFiles, chipId, query, booksFolder, getProgress, getTags) {
+function filterLibBooks(bookFiles, chipId, query, booksFolder, getProgress, getTags, collections) {
   const needle = (query || "")
     .trim()
     .toLowerCase();
@@ -11299,7 +11336,7 @@ function filterLibBooks(bookFiles, chipId, query, booksFolder, getProgress, getT
     if (needle && !haystack.includes(needle)) return false;
     const noChip = !chipId || chipId === "all";
     if (noChip) return true;
-    return libChipMatches(chipId, f, booksFolder, getProgress, getTags);
+    return libChipMatches(chipId, f, booksFolder, getProgress, getTags, collections);
   });
 }
 function bookTagsOf(settings, bookPath) {
@@ -11323,6 +11360,112 @@ function parseBookTags(raw) {
 // Import MIME types that map onto a known book extension.
 const IMPORT_MIME_EXT = new Map([["application/pdf", "pdf"], ["application/epub+zip", "epub"]]);
 
+const CollectionNameModal = class extends Modal {
+  constructor(app, title, value, submit) {
+    super(app);
+    this.titleText = title;
+    this.value = value || "";
+    this.submit = submit;
+  }
+  onOpen() {
+    const c = this.contentEl;
+    const titleId = `qbr-collection-name-${Date.now().toString(36)}`;
+    const heading = c.createEl("h3", { text: this.titleText });
+    heading.id = titleId;
+    const input = c.createEl("input", { cls: "qiaomu-reader-panel-input", attr: { type: "text", maxlength: "80", "aria-labelledby": titleId } });
+    input.value = this.value;
+    const error = c.createDiv({ cls: "qiaomu-reader-title-error", attr: { role: "alert" } });
+    const save = c.createEl("button", { text: qiaomuReaderTranslate("save"), attr: { type: "button" } });
+    const run = async () => {
+      if (save.disabled) return;
+      const name = input.value.trim();
+      if (!name) return;
+      save.disabled = true;
+      try {
+        const result = await this.submit(name.slice(0, 80));
+        if (result && result.ok === false) {
+          error.setText(qiaomuReaderTranslate(result.reason === "exists" ? "library-collection-exists" : "saving-failed-check-vault-permissions-and-retry"));
+          save.disabled = false;
+          return;
+        }
+        this.close();
+      } catch {
+        error.setText(qiaomuReaderTranslate("saving-failed-check-vault-permissions-and-retry"));
+        save.disabled = false;
+      }
+    };
+    save.addEventListener("click", () => { void run(); });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); void run(); }
+    });
+    qiaomuReaderAutoFocus(input);
+  }
+  onClose() { this.contentEl.empty(); }
+};
+
+const CollectionMembershipModal = class extends Modal {
+  constructor(app, plugin, file, onChange) {
+    super(app);
+    this.plugin = plugin;
+    this.file = file;
+    this.onChange = onChange || (() => {});
+  }
+  onOpen() {
+    this.modalEl.addClass("qiaomu-reader-collections-modal");
+    this._render();
+  }
+  onClose() { this.contentEl.empty(); }
+  _render() {
+    const c = this.contentEl;
+    c.empty();
+    c.addClass("qiaomu-reader-collections");
+    c.createEl("h3", { text: qiaomuReaderTranslate("library-add-to-collection") });
+    const collections = normalizeCollections(this.plugin.settings.libraryCollections);
+    const list = c.createDiv("qiaomu-reader-collection-list");
+    for (const collection of collections) {
+      const row = list.createEl("label", { cls: "qiaomu-reader-collection-choice" });
+      const box = row.createEl("input", { attr: { type: "checkbox" } });
+      box.checked = collection.books.includes(this.file.path);
+      row.createSpan({ text: collection.name });
+      box.addEventListener("change", async () => {
+        const result = setCollectionMember(this.plugin.settings.libraryCollections, collection.id, this.file.path, box.checked);
+        if (!result.ok) { box.checked = !box.checked; return; }
+        const saved = await commitShelfPrefs(this.plugin, { libraryCollections: result.collections });
+        if (!saved) { box.checked = !box.checked; return; }
+        this.onChange();
+      });
+    }
+    const create = c.createDiv("qiaomu-reader-collection-create");
+    const nameLabel = create.createEl("label");
+    nameLabel.createSpan({ text: qiaomuReaderTranslate("library-new-collection") });
+    const input = nameLabel.createEl("input", { cls: "qiaomu-reader-panel-input", attr: { type: "text", maxlength: "80" } });
+    const button = create.createEl("button", { text: qiaomuReaderTranslate("save"), attr: { type: "button" } });
+    const error = c.createDiv({ cls: "qiaomu-reader-title-error", attr: { role: "alert" } });
+    const submit = async () => {
+      if (button.disabled) return;
+      const result = createCollection(this.plugin.settings.libraryCollections, input.value, this.file.path);
+      if (!result.ok) {
+        if (result.reason === "empty") return;
+        error.setText(qiaomuReaderTranslate("library-collection-exists"));
+        return;
+      }
+      button.disabled = true;
+      const saved = await commitShelfPrefs(this.plugin, { libraryCollections: result.collections });
+      button.disabled = false;
+      if (!saved) {
+        error.setText(qiaomuReaderTranslate("saving-failed-check-vault-permissions-and-retry"));
+        return;
+      }
+      this.onChange();
+      this._render();
+    };
+    button.addEventListener("click", () => { void submit(); });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); void submit(); }
+    });
+  }
+};
+
 const LibraryModal = class extends Modal {
   constructor(app, plugin) {
     super(app);
@@ -11331,6 +11474,7 @@ const LibraryModal = class extends Modal {
   }
   async onOpen() { const { modalEl, contentEl } = this;
     const render = this._libraryRender = {};
+    this._libLayout = this.plugin.settings?.libLayout === "list" ? "list" : "grid";
     contentEl.empty();
     // The stylesheet matches `.qiaomu-reader-modal-lib .modal`, so the marker
     // class must sit on the modal element itself, not only the outer container.
@@ -11358,57 +11502,85 @@ const LibraryModal = class extends Modal {
     this._sortLibBooks(files);
     const chipRow = contentEl.createDiv("qiaomu-reader-lib-chips"), grid = contentEl.createDiv("qiaomu-reader-lib-grid");
     this._grid = grid;
+    if (this._libLayout === "list") grid.addClass("is-list");
     const progressOf = (p) => this.plugin.getProgress(p);
     const tagsOf = (p) => bookTagsOf(this.plugin.settings, p);
-    let selected = this.plugin.settings.libCategory || "all";
+    const collectionsOf = () => normalizeCollections(this.plugin.settings.libraryCollections);
+    this._libSelected = this.plugin.settings.libCategory || "all";
     const marked = new Set(files.filter(f => this.plugin.getHighlights(f.path).length).map(f => f.path));
     const rebuildChips = () => {
-      const items = buildLibChips(files, folder, progressOf, tagsOf, selected);
+      const items = buildLibChips(files, folder, progressOf, tagsOf, this._libSelected, collectionsOf());
       if (marked.size) items.splice(1, 0, { id: "study:highlights", label: qiaomuReaderTranslate("library-with-highlights"), count: marked.size });
       return items;
     };
     let chips = rebuildChips();
-    if (!chips.some((c) => c.id === selected)) {
-      selected = "all";
+    if (!chips.some((c) => c.id === this._libSelected)) {
+      this._libSelected = "all";
       chips = rebuildChips();
     }
     const redraw = (query) => {
       grid.empty();
-      const shown = filterLibBooks(files, selected, query, folder, progressOf, tagsOf)
-        .filter(f => selected !== "study:highlights" || marked.has(f.path));
+      grid.toggleClass("is-list", this._libLayout === "list");
+      const shown = filterLibBooks(files, this._libSelected, query, folder, progressOf, tagsOf, collectionsOf())
+        .filter(f => this._libSelected !== "study:highlights" || marked.has(f.path));
       if (shown.length === 0) {
-        grid.createDiv("qiaomu-reader-lib-noresult").setText(qiaomuReaderTranslate("nothing-found"));
+        grid.createDiv("qiaomu-reader-lib-noresult").setText(qiaomuReaderTranslate(libraryEmptyCopyKey(this._libSelected, query)));
         return;
       }
-      if (selected === "all" && !query.trim()) {
+      if (this._libSelected === "all" && !query.trim()) {
         const recent = files.find(f => bookStatusOf(progressOf(f.path)) === "reading");
         if (recent) this._buildLibResume(grid, recent);
       }
-      shown.forEach((f) => this.renderCard(grid, f));
+      const renderBook = this._libLayout === "list" ? this.renderRow : this.renderCard;
+      shown.forEach((f) => renderBook.call(this, grid, f));
     };
     const drawChipRow = () => {
       chips = rebuildChips();
       chipRow.empty();
-      if (chips.length <= 1) {
-        chipRow.addClass("qiaomu-reader-hidden");
-        return;
-      }
       chipRow.removeClass("qiaomu-reader-hidden");
       for (const c of chips) {
+        if (c.collection) {
+          const el = chipRow.createDiv("qiaomu-reader-lib-chip");
+          el.addClass("qiaomu-reader-lib-chip-collection");
+          if (c.id === this._libSelected) el.addClass("qiaomu-reader-lib-chip-on");
+          const main = el.createDiv("qiaomu-reader-lib-chip-main");
+          main.createSpan({ text: c.label });
+          main.createSpan({ cls: "qiaomu-reader-lib-chip-n", text: String(c.count) });
+          this._setAttrs(main, { role: "button", tabindex: "0", "aria-pressed": String(c.id === this._libSelected) });
+          this._activateOnClick(main, () => activateChip(c));
+          const more = el.createEl("button", { cls: "qiaomu-reader-lib-chip-more", attr: { type: "button" } });
+          svgIcon(more, "more");
+          const moreLabel = more.createSpan({ cls: "qiaomu-reader-sr-only", text: qiaomuReaderTranslate("more") });
+          moreLabel.id = `qbr-collection-more-${c.id.slice("collection:".length)}`;
+          more.setAttribute("aria-labelledby", moreLabel.id);
+          const openMenu = (ev) => { ev.preventDefault(); ev.stopPropagation(); this._openCollectionMenu(c, ev); };
+          more.addEventListener("click", openMenu);
+          el.addEventListener("contextmenu", openMenu);
+          continue;
+        }
         const el = chipRow.createDiv("qiaomu-reader-lib-chip");
         const [labelText, countText] = [c.label, String(c.count)];
         el.createSpan({ text: labelText });
         el.createSpan({ cls: "qiaomu-reader-lib-chip-n", text: countText });
-        this._setAttrs(el, { role: "button", tabindex: "0", "aria-pressed": String(c.id === selected) });
+        this._setAttrs(el, { role: "button", tabindex: "0", "aria-pressed": String(c.id === this._libSelected) });
         if (c.sub) el.addClass("qiaomu-reader-lib-chip-sub");
-        if (c.id === selected) el.addClass("qiaomu-reader-lib-chip-on");
+        if (c.id === this._libSelected) el.addClass("qiaomu-reader-lib-chip-on");
         this._activateOnClick(el, () => activateChip(c));
       }
+      const create = chipRow.createDiv("qiaomu-reader-lib-chip");
+      create.addClass("qiaomu-reader-lib-chip-create");
+      this._setAttrs(create, { role: "button", tabindex: "0" });
+      svgIcon(create.createSpan("qiaomu-reader-lib-chip-plus"), "plus");
+      create.createSpan({ text: qiaomuReaderTranslate("library-new-collection") });
+      this._activateOnClick(create, () => this._promptNewCollection());
     };
     const activateChip = async (c) => {
-      this.plugin.settings.libCategory = selected = c.id;
+      this._libSelected = c.id;
+      this.plugin.settings.libCategory = c.id;
       await this.plugin._saveLocalData(); drawChipRow(); redraw(input.value);
     };
+    this._redrawLib = redraw;
+    this._drawLibChips = drawChipRow;
     drawChipRow();
     input.addEventListener("input", () => redraw(input.value));
     redraw("");
@@ -11472,7 +11644,89 @@ const LibraryModal = class extends Modal {
     const searchIcon = search.createDiv("qiaomu-reader-lib-search-ic");
     svgIcon(searchIcon, "search");
     const input = search.createEl("input", { cls: "qiaomu-reader-lib-search-input", attr: { type: "text", placeholder: qiaomuReaderTranslate("search-a-book"), spellcheck: "false" } });
+    this._searchInput = input;
+    const layout = tools.createDiv("qiaomu-reader-lib-layout");
+    this._layoutButtons = ["grid", "list"].map((id) => {
+      const button = layout.createEl("button", {
+        text: qiaomuReaderTranslate(id === "grid" ? "library-view-grid" : "library-view-list"),
+        attr: { type: "button", "aria-pressed": String(this._libLayout === id) },
+      });
+      button.dataset.layout = id;
+      button.addEventListener("click", () => { void this._setLibLayout(id); });
+      return button;
+    });
     return { input };
+  }
+  async _setLibLayout(id) {
+    const layout = libraryLayout(id);
+    if (this._libLayout === layout) return;
+    this._libLayout = layout;
+    for (const button of this._layoutButtons || []) button.setAttribute("aria-pressed", String(button.dataset.layout === layout));
+    this._grid?.toggleClass("is-list", layout === "list");
+    const saved = await commitShelfPrefs(this.plugin, { libLayout: layout });
+    if (!saved) {
+      this._libLayout = libraryLayout(this.plugin.settings.libLayout);
+      for (const button of this._layoutButtons || []) button.setAttribute("aria-pressed", String(button.dataset.layout === this._libLayout));
+      this._grid?.toggleClass("is-list", this._libLayout === "list");
+      return;
+    }
+    this._redrawLib?.(this._searchInput?.value || "");
+  }
+  _promptNewCollection() {
+    new CollectionNameModal(this.app, qiaomuReaderTranslate("library-new-collection"), "", async (name) => {
+      const result = createCollection(this.plugin.settings.libraryCollections, name);
+      if (!result.ok) return result;
+      const chip = `collection:${result.collection.id}`;
+      const saved = await commitShelfPrefs(this.plugin, { libraryCollections: result.collections, libCategory: chip });
+      if (!saved) return { ok: false, reason: "save" };
+      this._libSelected = chip;
+      this._drawLibChips?.();
+      this._redrawLib?.(this._searchInput?.value || "");
+      return result;
+    }).open();
+  }
+  _openCollectionMembership(file) {
+    new CollectionMembershipModal(this.app, this.plugin, file, () => {
+      this._drawLibChips?.();
+      this._redrawLib?.(this._searchInput?.value || "");
+    }).open();
+  }
+  _openCollectionMenu(chip, ev) {
+    const id = String(chip.id || "").slice("collection:".length);
+    const collection = normalizeCollections(this.plugin.settings.libraryCollections).find((item) => item.id === id);
+    if (!collection) return;
+    const menu = new Menu();
+    menu.addItem((it) => it.setTitle(qiaomuReaderTranslate("library-rename-collection")).setIcon("pencil").onClick(() => {
+      new CollectionNameModal(this.app, qiaomuReaderTranslate("library-rename-collection"), collection.name, async (name) => {
+        const result = renameCollection(this.plugin.settings.libraryCollections, id, name);
+        if (!result.ok) return result;
+        const saved = await commitShelfPrefs(this.plugin, { libraryCollections: result.collections });
+        if (!saved) return { ok: false, reason: "save" };
+        this._drawLibChips?.();
+        return result;
+      }).open();
+    }));
+    menu.addItem((it) => it.setTitle(qiaomuReaderTranslate("library-delete-collection")).setIcon("trash").onClick(() => {
+      new ConfirmModal(this.app, {
+        title: qiaomuReaderTranslate("library-delete-collection"),
+        body: qiaomuReaderTranslate("library-delete-collection-body", collection.name),
+        onYes: async () => {
+          const changes = { libraryCollections: deleteCollection(this.plugin.settings.libraryCollections, id) };
+          const previousChip = this._libSelected;
+          if (this._libSelected === chip.id) {
+            this._libSelected = "all";
+            changes.libCategory = "all";
+          }
+          if (!await commitShelfPrefs(this.plugin, changes)) {
+            this._libSelected = previousChip;
+            return;
+          }
+          this._drawLibChips?.();
+          this._redrawLib?.(this._searchInput?.value || "");
+        },
+      }).open();
+    }));
+    menu.showAtMouseEvent(ev);
   }
   _libVaultBooks(folder) {
     const prefix = folder ? `${folder}/` : "";
@@ -11703,18 +11957,14 @@ const LibraryModal = class extends Modal {
           openCalibreShowBook(libraryPath, rec.id);
         }));
       }
+      menu.addItem((it) => it.setTitle(qiaomuReaderTranslate("library-add-to-collection")).setIcon("library").onClick(() => {
+        this._openCollectionMembership(file);
+      }));
       menu.addSeparator(); removeItem(menu);
       menu.showAtMouseEvent(ev);
     };
   }
-  renderCard(host, file) {
-    const bookPath = file.path;
-    const prog = this.plugin.getProgress(bookPath);
-    const pct = prog?.percent ?? 0;
-    const card = host.createDiv("qiaomu-reader-lib-card");
-    this._setAttrs(card, { role: "group", tabindex: "0" });
-    card.setAttribute("aria-label", qiaomuReaderTranslate("open-book-0", file.basename));
-    const cover = card.createDiv("qiaomu-reader-lib-cover");
+  _libCover(cover, file, pct) {
     const ph = cover.createDiv("qiaomu-reader-lib-ph");
     const [paper, ink] = coverPalette(file.basename);
     ph.style.setProperty("--qbr-cover-paper", paper);
@@ -11722,70 +11972,70 @@ const LibraryModal = class extends Modal {
     ph.createDiv("qiaomu-reader-lib-ph-ext").setText(file.extension.toUpperCase());
     ph.createDiv("qiaomu-reader-lib-ph-title").setText(file.basename);
     void this.loadThumb(file, cover, ph);
-    const showStrip = pct > 0;
-    if (showStrip) {
-      const strip = cover.createDiv("qiaomu-reader-lib-strip");
-      strip.createDiv("qiaomu-reader-lib-strip-fill").style.width = `${pct}%`;
-    }
-    const highlights = this.plugin.getHighlights(bookPath);
-    const noteCount = highlights.length;
-    const info = card.createDiv("qiaomu-reader-lib-info");
-    info.createDiv("qiaomu-reader-lib-book-title").setText(file.basename);
-    const meta = info.createDiv("qiaomu-reader-lib-book-meta");
+    if (pct > 0) cover.createDiv("qiaomu-reader-lib-strip").createDiv("qiaomu-reader-lib-strip-fill").style.width = `${pct}%`;
+  }
+  _libMeta(parent, file, prog, pct, noteCount) {
+    parent.createDiv("qiaomu-reader-lib-book-title").setText(file.basename);
+    const meta = parent.createDiv("qiaomu-reader-lib-book-meta");
     if (prog?.lastRead) {
       const day = new Date(prog.lastRead).toLocaleDateString(qiaomuReaderLocale(), { day: "numeric", month: "short" });
       meta.setText(`${pct}% · ${day}`);
-    } else {
-      meta.setText(qiaomuReaderTranslate("not-started-2"));
-    }
+    } else meta.setText(qiaomuReaderTranslate("not-started-2"));
     if (noteCount > 0) {
       if (meta.textContent) meta.append(docOf(meta).createTextNode(" · "));
       meta.createSpan({ cls: "qiaomu-reader-lib-note-count", text: qiaomuReaderTranslate("library-note-count", noteCount) });
     }
-    const quick = cover.createDiv("qiaomu-reader-lib-quick");
-    const stopCard = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
-    const quickAction = (label, iconName, run) => {
-      const action = quick.createDiv("qiaomu-reader-lib-action");
-      action.setAttribute("role", "button");
-      action.tabIndex = 0;
-      const mark = action.createSpan("qiaomu-reader-lib-action-icon");
-      svgIcon(mark, iconName);
-      const caption = action.createSpan({ cls: "qiaomu-reader-lib-action-label", text: label });
-      caption.id = `qbr-lib-action-${++this._libActionSeq}`;
-      action.setAttribute("aria-labelledby", caption.id);
-      let actedAt = 0;
-      const activate = (ev) => {
-        stopCard(ev);
-        const now = Date.now();
-        if (now - actedAt < 50) return;
-        actedAt = now;
-        run();
-      };
-      action.addEventListener("click", activate);
-      action.addEventListener("keydown", (ev) => {
-        if (ev.key !== "Enter" && ev.key !== " ") return;
-        activate(ev);
-      });
-      return action;
+  }
+  _libAction(host, label, iconName, run) {
+    const action = host.createDiv("qiaomu-reader-lib-action");
+    action.setAttribute("role", "button");
+    action.tabIndex = 0;
+    svgIcon(action.createSpan("qiaomu-reader-lib-action-icon"), iconName);
+    const caption = action.createSpan({ cls: "qiaomu-reader-lib-action-label", text: label });
+    caption.id = `qbr-lib-action-${++this._libActionSeq}`;
+    action.setAttribute("aria-labelledby", caption.id);
+    let actedAt = 0;
+    const activate = (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      const now = Date.now();
+      if (now - actedAt < 50) return;
+      actedAt = now;
+      run();
     };
-    quickAction(qiaomuReaderTranslate("library-continue"), "book-open", () => {
-      this.close();
-      void this.plugin.openFile(file);
+    action.addEventListener("click", activate);
+    action.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      activate(ev);
     });
-    if (noteCount > 0) {
-      quickAction(qiaomuReaderTranslate("library-view-notes"), "reading-note", () => { void this._openLibHighlights(file); });
-    }
+  }
+  _libMenuButton(host, bookMenu) {
+    const menuBtn = host.createEl("button", { cls: "qiaomu-reader-lib-morebtn", attr: { type: "button" } });
+    menuBtn.setAttribute("aria-label", qiaomuReaderTranslate("book-actions"));
+    svgIcon(menuBtn, "more");
+    menuBtn.addEventListener("click", bookMenu);
+  }
+  renderCard(host, file) {
+    const bookPath = file.path;
+    const prog = this.plugin.getProgress(bookPath);
+    const pct = prog?.percent ?? 0;
+    const noteCount = this.plugin.getHighlights(bookPath).length;
+    const card = host.createDiv("qiaomu-reader-lib-card");
+    this._setAttrs(card, { role: "group", tabindex: "0" });
+    card.setAttribute("aria-label", qiaomuReaderTranslate("open-book-0", file.basename));
+    const cover = card.createDiv("qiaomu-reader-lib-cover");
+    this._libCover(cover, file, pct);
+    this._libMeta(card.createDiv("qiaomu-reader-lib-info"), file, prog, pct, noteCount);
+    const quick = cover.createDiv("qiaomu-reader-lib-quick");
+    const openBook = () => { this.close(); void this.plugin.openFile(file); };
+    this._libAction(quick, qiaomuReaderTranslate("library-continue"), "book-open", openBook);
+    if (noteCount > 0) this._libAction(quick, qiaomuReaderTranslate("library-view-notes"), "reading-note", () => { void this._openLibHighlights(file); });
     let holdTimer = 0;
     let holding = false;
-    const revealActions = () => {
-      holding = true;
-      card.addClass("is-actions-open");
-    };
     card.addEventListener("pointerdown", (ev) => {
       if (ev.pointerType === "mouse" || ev.button !== 0) return;
       if (ev.target.closest(".qiaomu-reader-lib-action, .qiaomu-reader-lib-morebtn")) return;
       window.clearTimeout(holdTimer);
-      holdTimer = window.setTimeout(revealActions, 450);
+      holdTimer = window.setTimeout(() => { holding = true; card.addClass("is-actions-open"); }, 450);
     });
     const cancelHold = () => { window.clearTimeout(holdTimer); };
     card.addEventListener("pointerup", cancelHold);
@@ -11797,18 +12047,34 @@ const LibraryModal = class extends Modal {
       ev.preventDefault();
       ev.stopPropagation();
     }, true);
-    const openBook = () => {
-      this.close();
-      void this.plugin.openFile(file);
-    };
-    const bookMenu = this._libCardMenu(file); card.addEventListener("contextmenu", bookMenu);
-    const menuBtn = cover.createEl("button", { cls: "qiaomu-reader-lib-morebtn", attr: { type: "button" } });
-    menuBtn.setAttribute("aria-label", qiaomuReaderTranslate("book-actions"));
-    svgIcon(menuBtn, "more");
-    menuBtn.addEventListener("click", bookMenu);
+    const bookMenu = this._libCardMenu(file);
+    this._libMenuButton(cover, bookMenu);
+    card.addEventListener("contextmenu", bookMenu);
     card.addEventListener("click", ev => { if (!ev.target.closest("button, .qiaomu-reader-lib-action")) openBook(); });
     card.addEventListener("keydown", ev => {
       if (ev.target === card && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openBook(); }
+    });
+  }
+  renderRow(host, file) {
+    const bookPath = file.path;
+    const prog = this.plugin.getProgress(bookPath);
+    const pct = prog?.percent ?? 0;
+    const noteCount = this.plugin.getHighlights(bookPath).length;
+    const row = host.createDiv("qiaomu-reader-lib-row");
+    this._setAttrs(row, { role: "group", tabindex: "0" });
+    row.setAttribute("aria-label", qiaomuReaderTranslate("open-book-0", file.basename));
+    this._libCover(row.createDiv("qiaomu-reader-lib-row-cover").createDiv("qiaomu-reader-lib-cover"), file, pct);
+    this._libMeta(row.createDiv("qiaomu-reader-lib-row-copy"), file, prog, pct, noteCount);
+    const actions = row.createDiv("qiaomu-reader-lib-row-actions");
+    const openBook = () => { this.close(); void this.plugin.openFile(file); };
+    this._libAction(actions, qiaomuReaderTranslate("library-continue"), "book-open", openBook);
+    if (noteCount > 0) this._libAction(actions, qiaomuReaderTranslate("library-view-notes"), "reading-note", () => { void this._openLibHighlights(file); });
+    const bookMenu = this._libCardMenu(file);
+    this._libMenuButton(actions, bookMenu);
+    row.addEventListener("contextmenu", bookMenu);
+    row.addEventListener("click", (ev) => { if (!ev.target.closest("button, .qiaomu-reader-lib-action")) openBook(); });
+    row.addEventListener("keydown", (ev) => {
+      if (ev.target === row && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openBook(); }
     });
   }
   async loadThumb(bookFile, coverEl, placeholder) {

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { retargetCollectionPaths } from '../src/library-collections.js';
 const source = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 class TFile {
   constructor(path) { this.path = path; this.basename = path.split('/').at(-1).replace(/\.md$/, ''); this.extension = 'md'; }
@@ -43,12 +44,13 @@ test('renaming a note or its folder updates exact links without touching similar
   const code = source.slice(start, source.indexOf('  _scheduleFirstRunFlow()', start));
   const callbacks = {};
   let saves = 0;
-  const watch = vm.runInNewContext(`({${code}})._watchBookFiles`, { window: {}, BOOK_EXTENSIONS: new Set() });
-  const plugin = { settings: { bookNoteLinks: { a: 'A/笔记.md', b: 'AB/笔记.md', c: 'B/笔记.md' } }, app: { vault: { on: (name, fn) => { (callbacks[name] ||= []).push(fn); } } }, registerEvent() {}, registerBookCommands() {}, _saveLocalData: () => saves++ };
+  const watch = vm.runInNewContext(`({${code}})._watchBookFiles`, { window: {}, BOOK_EXTENSIONS: new Set(), retargetCollectionPaths });
+  const plugin = { settings: { bookNoteLinks: { a: 'A/笔记.md', b: 'AB/笔记.md', c: 'B/笔记.md' }, libraryCollections: [{ id: 'col_a', name: '诗', books: ['A/book.epub', 'AB/book.epub'] }] }, app: { vault: { on: (name, fn) => { (callbacks[name] ||= []).push(fn); } } }, registerEvent() {}, registerBookCommands() {}, _saveLocalData: () => saves++ };
   watch.call(plugin);
   callbacks.rename[0]({ path: '移动后' }, 'A');
   assert.equal(plugin.settings.bookNoteLinks.a, '移动后/笔记.md');
   assert.equal(plugin.settings.bookNoteLinks.b, 'AB/笔记.md');
+  assert.deepEqual(plugin.settings.libraryCollections[0].books, ['移动后/book.epub', 'AB/book.epub']);
   callbacks.rename[0]({ path: 'B/新名字.md' }, 'B/笔记.md');
   assert.equal(plugin.settings.bookNoteLinks.c, 'B/新名字.md');
   assert.equal(saves, 2);
