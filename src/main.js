@@ -4682,7 +4682,13 @@ async function refreshEnglishGlosses(view, doc) {
   try { items = visibleEnglishWords(doc, view.plugin.settings.englishCefrLevel || "B1", 28, viewport, dictionary); }
   catch { showEnglishGlossLoadError(view); return; }
   view._englishGlossErrorShown = false;
-  layer.draw(items.map(item => ({ range: item.range, gloss: lookupEnglishWord(dictionary, item.word)?.gloss })), viewport);
+  layer.draw(items.map(item => ({
+    range: item.range,
+    word: item.word,
+    gloss: lookupEnglishWord(dictionary, item.word)?.gloss,
+  })), viewport, (word, rect) => {
+    void englishSelectionResult(view, doc, word, rect, "word");
+  });
 }
 async function aiTestConnection(plugin) {
   const cfg = aiConfig(plugin);
