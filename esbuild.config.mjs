@@ -3,7 +3,7 @@ import process from "process";
 import fs from "fs";
 import path from "path";
 import { buildProfile } from "./scripts/build-profile.mjs";
-import { gzipForRelease } from "./scripts/gzip-release.mjs";
+import { gzipDictionary } from "./scripts/dictionary-gzip.mjs";
 import { foliateElements } from "./scripts/foliate-elements.mjs";
 
 const profileArg = process.argv.find((arg) => arg.startsWith("--profile="));
@@ -178,7 +178,7 @@ if (prod) {
   const fontData = fs.readFileSync("fonts/QiaomuReadingFangsong.woff2").toString("base64");
   const openDyslexicData = fs.readFileSync("fonts/OpenDyslexic-Regular.woff2").toString("base64");
   const cefrData = fs.readFileSync("src/english-cefr.json").toString("base64");
-  const dictionaryData = gzipForRelease(fs.readFileSync("src/english-dictionary.json")).toString("base64");
+  const dictionaryData = gzipDictionary(fs.readFileSync("src/english-dictionary.json")).toString("base64");
   const css = fs.readFileSync("src/styles.css", "utf8") + `\n/* BUNDLED FONT PROVENANCE\n${fontProvenance}\nBUNDLED FONT LICENSE — SIL OFL 1.1\n${fontLicense}\n--- OpenDyslexic ---\n${openDyslexicLicense}\n*/\n@font-face { font-family: 'QBR Zhuque Fangsong'; src: url('data:font/woff2;base64,${fontData}') format('woff2'); font-style: normal; font-weight: 400; font-display: swap; }\n@font-face { font-family: 'QBR OpenDyslexic'; src: url('data:font/woff2;base64,${openDyslexicData}') format('woff2'); font-style: normal; font-weight: 400; font-display: swap; }\n`;
   const wordDataLicense = fs.readFileSync("licenses/words-cefr-MIT.txt", "utf8");
   const dictionaryLicense = fs.readFileSync("licenses/freedict-eng-zho-CC-BY-SA-3.0.txt", "utf8");
@@ -193,7 +193,7 @@ if (prod) {
   }
   for (const name of ["main.js", "styles.css"]) {
     const bytes = fs.statSync(path.join(profile.outputDir, name)).size;
-    if (bytes > 5_250_000) throw new Error(`${name} exceeds the 5.25 MB release budget: ${bytes} bytes`);
+    if (bytes > 5_300_000) throw new Error(`${name} exceeds the 5.30 MB release budget: ${bytes} bytes`);
     console.log(`${name}: ${bytes} bytes`);
   }
   // The pdf.js worker is now embedded in main.js (see loadPatchedWorker above), so

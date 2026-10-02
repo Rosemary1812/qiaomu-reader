@@ -28,9 +28,12 @@ test("exports setting key and chord window", () => {
   assert.deepEqual(createVimChordState(), { pendingG: 0 });
 });
 
-test("scrollStepPx is about 85% of viewport", () => {
-  assert.equal(scrollStepPx(1000), 850);
+test("j/k use a small scroll step capped at 48 pixels", () => {
+  assert.equal(scrollStepPx(1000), 48);
+  assert.equal(scrollStepPx(600), 48);
+  assert.equal(scrollStepPx(300), 30);
   assert.equal(scrollStepPx(0), 1);
+  assert.equal(scrollStepPx(-100), 1);
 });
 
 test("isTypingTarget detects inputs", () => {

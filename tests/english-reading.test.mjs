@@ -112,6 +112,66 @@ test("gloss refresh tolerates a chapter iframe that was already detached", () =>
   assert.deepEqual(englishGlossViewport({ defaultView: null }, area), { left: 0, right: 600, top: 0, bottom: 800 });
 });
 
+test("sentence-initial capitals are glossed and mid-sentence capitals stay names", () => {
+  const dom = new JSDOM("<html><body><p><span>Ambiguous</span> cases remain. See <span>Ubiquitous</span> later. NASA stays. ameliorate returns.</p></body></html>");
+  const { document: doc } = dom.window;
+  globalThis.NodeFilter = dom.window.NodeFilter;
+  dom.window.Range.prototype.getBoundingClientRect = () => ({ left: 20, right: 90, top: 60, bottom: 80, width: 70 });
+  const words = visibleEnglishWords(doc, "B1").map(item => item.word);
+  assert.ok(words.includes("Ambiguous"));
+  assert.equal(words.includes("Ubiquitous"), false);
+  assert.equal(words.includes("NASA"), false);
+  assert.ok(words.includes("ameliorate"));
+});
+
+test("overlapping glosses do not consume the visible limit", async () => {
+  const dom = new JSDOM("<html><body><p>ameliorate ubiquitous ambiguous</p></body></html>");
+  const { document: doc } = dom.window;
+  globalThis.NodeFilter = dom.window.NodeFilter;
+  dom.window.Range.prototype.getBoundingClientRect = function () {
+    const word = this.toString();
+    if (word === "ubiquitous") return { left: 8, right: 38, top: 40, bottom: 60, width: 30, height: 20 };
+    if (word === "ambiguous") return { left: 400, right: 440, top: 40, bottom: 60, width: 40, height: 20 };
+    return { left: 0, right: 30, top: 40, bottom: 60, width: 30, height: 20 };
+  };
+  const dictionary = await loadEnglishDictionary();
+  assert.deepEqual(
+    visibleEnglishWords(doc, "B1", 2, { left: 0, right: 800, top: 0, bottom: 200 }, dictionary).map(item => item.word),
+    ["ameliorate", "ambiguous"],
+  );
+});
+
+test("clicking a gloss opens that word and overlapping labels are omitted", () => {
+  const dom = new JSDOM("<html><body><p>ameliorate</p><p>ubiquitous</p></body></html>");
+  const { document: doc } = dom.window;
+  const svg = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+  doc.body.append(svg);
+  const ranges = [...doc.querySelectorAll("p")].map(paragraph => {
+    const range = doc.createRange();
+    range.selectNodeContents(paragraph.firstChild);
+    return range;
+  });
+  dom.window.Range.prototype.getBoundingClientRect = function () {
+    return this.startContainer === ranges[0].startContainer
+      ? { left: 0, right: 30, top: 40, bottom: 60, width: 30, height: 20 }
+      : { left: 8, right: 38, top: 40, bottom: 60, width: 30, height: 20 };
+  };
+  let clicked = null;
+  const layer = createEnglishGlossLayer(doc, { element: svg });
+  layer.draw([
+    { range: ranges[0], word: "ameliorate", gloss: "改善" },
+    { range: ranges[1], word: "ubiquitous", gloss: "无处不在的" },
+  ], { left: 0, right: 800, top: 0, bottom: 200 }, (word, rect) => { clicked = { word, rect }; });
+  const labels = [...svg.querySelectorAll("text")];
+  assert.deepEqual(labels.map(label => label.getAttribute("data-word")), ["ameliorate"]);
+  assert.equal(labels[0].getAttribute("pointer-events"), "auto");
+  labels[0].dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  assert.equal(clicked.word, "ameliorate");
+  assert.equal(typeof clicked.rect.left, "number");
+  assert.equal(typeof clicked.rect.bottom, "number");
+  layer.remove();
+});
+
 test("missing dictionary entries do not consume the visible gloss limit", async () => {
   const dom = new JSDOM("<html><body><p>aberrant ameliorate</p></body></html>");
   const { document: doc } = dom.window;

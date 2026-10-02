@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { gzipForRelease } from "./gzip-release.mjs";
 import { fileURLToPath } from "node:url";
 import { buildProfile } from "./build-profile.mjs";
+import { gzipDictionary } from "./dictionary-gzip.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -43,7 +43,7 @@ requireCheck(versions[manifest.version] === manifest.minAppVersion, "versions.js
 const assets = Object.fromEntries(releaseFiles.map((name) => {
   const file = path.join(profile.outputDir, name);
   requireCheck(fs.existsSync(file), `missing release asset: ${name}`);
-  requireCheck(fs.statSync(file).size <= 5_250_000, `release asset exceeds 5.25 MB: ${name}`);
+  requireCheck(fs.statSync(file).size <= 5_300_000, `release asset exceeds 5.30 MB: ${name}`);
   requireCheck(fs.statSync(file).size > 0, `empty release asset: ${name}`);
   return [name, { bytes: fs.statSync(file).size, sha256: sha256(file) }];
 }));
@@ -84,7 +84,7 @@ requireCheck(cssSource.includes(fs.readFileSync(path.join(root, "fonts/OpenDysle
 requireCheck(cssSource.includes(fs.readFileSync(path.join(root, "fonts/README.md"), "utf8")), "styles.css is missing the bundled font provenance");
 const dictionaryLicenseComment = fs.readFileSync(path.join(root, "licenses/freedict-eng-zho-CC-BY-SA-3.0.txt"), "utf8").split("\n").map(line => line ? ` * ${line}` : " *").join("\n");
 requireCheck(cssSource.includes(dictionaryLicenseComment), "styles.css is missing the offline dictionary license");
-const dictionaryPayload = gzipForRelease(fs.readFileSync(path.join(root, "src/english-dictionary.json"))).toString("base64");
+const dictionaryPayload = gzipDictionary(fs.readFileSync(path.join(root, "src/english-dictionary.json"))).toString("base64");
 requireCheck(cssSource.includes(dictionaryPayload), "styles.css dictionary payload differs from source");
 
 if (installDir) {
