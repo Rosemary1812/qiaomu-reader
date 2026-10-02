@@ -641,14 +641,29 @@ img.qiaomu-reader-pdf-lazy:not([data-loaded="1"]) { background:color-mix(in srgb
 .qiaomu-reader-stats-val { font-size: 15px; font-weight: 600; color: var(--text-normal); font-variant-numeric: tabular-nums; }
 .qiaomu-reader-stats-lab { margin-top: 2px; font-size: 11px; color: var(--text-muted); text-transform: lowercase; }
 
-.qiaomu-reader-stats-chart { margin-top: 18px; }
-.qiaomu-reader-stats-bars { display: flex; align-items: flex-end; gap: 4px; height: 44px; }
-.qiaomu-reader-stats-bar { flex: 1 1 0; min-width: 0; height: 100%; display: flex; align-items: flex-end; }
-.qiaomu-reader-stats-fill { width: 100%; border-radius: 3px; background: var(--background-modifier-border); }
-.qiaomu-reader-stats-bar.is-read .qiaomu-reader-stats-fill { background: var(--text-muted); }
-.qiaomu-reader-stats-bar:last-child.is-read .qiaomu-reader-stats-fill { background: var(--text-accent); }
-.qiaomu-reader-stats-legend { display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; color: var(--text-faint); }
 .qiaomu-reader-stats-empty { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--background-modifier-border); font-size: 12px; color: var(--text-muted); }
+
+/* One year of timer days. The detail line is the name of the selected cell. */
+.qiaomu-reader-heat { --qiaomu-reader-heat-accent: var(--text-accent); --qiaomu-reader-heat-empty: var(--background-modifier-border); --qiaomu-reader-heat-muted: var(--text-muted); width: 100%; min-width: 0; max-width: 100%; user-select: none; -webkit-user-select: none; }
+.qiaomu-reader-modal-lib .qiaomu-reader-heat { --qiaomu-reader-heat-accent: var(--qiaomu-reader-lib-accent, var(--text-accent)); --qiaomu-reader-heat-empty: var(--qiaomu-reader-lib-border, var(--background-modifier-border)); --qiaomu-reader-heat-muted: var(--qiaomu-reader-lib-muted, var(--text-muted)); }
+.qiaomu-reader-lib > .qiaomu-reader-heat { flex: none; box-sizing: border-box; width: 100%; padding: 2px 28px 10px; }
+.qiaomu-reader-stats .qiaomu-reader-heat { margin-top: 18px; }
+.qiaomu-reader-heat:focus { outline: none; }
+.qiaomu-reader-heat:focus-visible { outline: 2px solid var(--qiaomu-reader-heat-accent); outline-offset: 3px; }
+.qiaomu-reader-heat-cap { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--qiaomu-reader-heat-muted); }
+.qiaomu-reader-heat-scroll { overflow-x: auto; overflow-y: hidden; max-width: 100%; scrollbar-width: thin; touch-action: pan-x; }
+.qiaomu-reader-heat-plot { display: grid; grid-template-columns: repeat(52, minmax(10px, 1fr)); gap: 3px; width: 100%; min-width: 673px; box-sizing: border-box; padding: 2px; }
+.qiaomu-reader-heat-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.qiaomu-reader-heat-month { width: 100%; min-width: 0; flex: 0 0 14px; height: 14px; text-align: left; font-size: 10px; line-height: 14px; color: var(--qiaomu-reader-heat-muted); white-space: nowrap; }
+.qiaomu-reader-heat-cell { width: 100%; aspect-ratio: 1; flex-shrink: 0; border-radius: 2px; background: var(--qiaomu-reader-heat-empty); }
+.qiaomu-reader-heat-cell:not(.is-future) { cursor: pointer; }
+.qiaomu-reader-heat-cell.is-1 { background: color-mix(in srgb, var(--qiaomu-reader-heat-accent) 30%, transparent); }
+.qiaomu-reader-heat-cell.is-2 { background: color-mix(in srgb, var(--qiaomu-reader-heat-accent) 60%, transparent); }
+.qiaomu-reader-heat-cell.is-3 { background: var(--qiaomu-reader-heat-accent); }
+.qiaomu-reader-heat-cell.is-selected { box-shadow: 0 0 0 1px var(--qiaomu-reader-heat-empty), 0 0 0 2px var(--qiaomu-reader-heat-accent); }
+.qiaomu-reader-heat-detail { margin: 6px 0 0; min-height: 1.3em; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--qiaomu-reader-heat-muted); }
+@media (pointer: coarse) { .qiaomu-reader-heat-plot { min-width: 777px; grid-template-columns: repeat(52, minmax(12px, 1fr)); } }
+@container (max-width: 500px) { .qiaomu-reader-lib > .qiaomu-reader-heat { padding-left: 16px; padding-right: 16px; } }
 
 /* .qiaomu-reader-col-row is a plain non-wrapping flex row that now also
    carries three- and four-button groups ("left / justify / center /
@@ -1599,3 +1614,14 @@ button.qiaomu-reader-find-item.qiaomu-reader-toc-active { background: var(--back
 .qiaomu-reader-collection-books > button { align-self: flex-end; }
 
 .qiaomu-reader-english-actions { display:flex; flex-wrap:wrap; gap:12px; }
+
+/* Scroll the whole shelf so expanded statistics never pin books below it. */
+.qiaomu-reader-lib { overflow-y: auto; overflow-x: hidden; }
+.qiaomu-reader-lib > * { flex-shrink: 0; }
+.qiaomu-reader-lib .qiaomu-reader-lib-grid { flex: none; overflow: visible; }
+.qiaomu-reader-lib-heat-details { margin: 0 28px 16px; min-width: 0; }
+.qiaomu-reader-lib-heat-details > summary { cursor: pointer; padding: 6px 0; color: var(--qiaomu-reader-lib-muted); font-size: 12px; font-weight: 600; }
+.qiaomu-reader-lib-heat-details > summary:focus-visible { outline: 2px solid var(--qiaomu-reader-lib-accent); outline-offset: 2px; }
+.qiaomu-reader-lib-heat-body { padding-top: 8px; }
+@container (max-width: 500px) { .qiaomu-reader-lib-heat-details { margin-left: 16px; margin-right: 16px; } }
+.qiaomu-reader-lib-as-view .view-content.qiaomu-reader-lib { overflow-y: auto; overflow-x: hidden; }

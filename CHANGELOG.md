@@ -6,6 +6,7 @@ This file records user-visible changes in the unofficial enhanced fork maintaine
 
 ### Fork enhancements
 
+- Added a one-year reading heatmap on the library and in reading statistics. Squares follow the daily goal, and reading days are kept for 400 days.
 - Added offline English word lookup and optional page glosses; longer selections can still use AI assistance.
 - English word cards can save a word to the vault vocabulary note and, when Anki desktop is open, to the deck 生词本. Phone reading keeps the note and syncs cards later from the desktop.
 - Shelf collections group books for browsing without moving their files, and the shelf can switch between the cover grid and a list.

@@ -31,6 +31,7 @@ function setup() {
     qiaomuReaderTranslate: (key, n) => n === undefined ? key : `${key}:${n}`, svgIcon() {},
     bookNoteLinkFor: () => "linked", resolveBookNote: () => ({}), openOrCreateBookNoteBeside: async () => { notes++; },
     Notice: class {}, Date, qiaomuReaderPath: value => value, coverPalette, docOf: () => document,
+    showReadingHeatmap() {},
   });
   const library = new Library({}, plugin);
   library.loadThumb = async () => {};
