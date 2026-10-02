@@ -11469,18 +11469,6 @@ function libTallyBooks(bookFiles, booksFolder, getProgress, getTags) {
   }
   return { statuses, folders, tags };
 }
-// Counts the immediate subfolders below an opened folder chip.
-function libSubfolderCounts(bookFiles, booksFolder, openFolder) {
-  const subs = new Map();
-  if (!openFolder) return subs;
-  for (const f of bookFiles) {
-    const where = bookRelFolder(f.path, booksFolder);
-    if (where === openFolder || !where.startsWith(openFolder + "/")) continue;
-    const tail = where.slice(openFolder.length + 1);
-    libBump(subs, openFolder + "/" + tail.split("/")[0]);
-  }
-  return subs;
-}
 function buildLibChips(bookFiles, booksFolder, getProgress, getTags, activeChip, collections) {
   const { statuses, tags } = libTallyBooks(bookFiles, booksFolder, getProgress, getTags);
   const chips = [{ id: "all", label: qiaomuReaderTranslate("all"), count: bookFiles.length }];
