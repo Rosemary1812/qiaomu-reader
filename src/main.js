@@ -13600,6 +13600,20 @@ const SettingsTab = class extends PluginSettingTab {
       english: (host) => {
         this._sectionIntro(host, englishReadingLabel("英文辅助阅读", "English reading assistance"), englishReadingLabel("设置单词上方的中文释义，不需要连接 AI 服务。", "Configure Chinese word glosses without connecting an AI service."));
         buildEnglishGlossSettings(host, this.plugin);
+        const plugin = this.plugin;
+        new Setting(host).setName(englishReadingLabel("Anki 牌组", "Anki deck"))
+          .setDesc(englishReadingLabel("留空则使用「生词本」。", "Leave blank to use “生词本”."))
+          .addText(text => text.setPlaceholder("生词本").setValue(plugin.settings.vocabAnkiDeck || "").onChange(async value => {
+            plugin.settings.vocabAnkiDeck = String(value || "").replace(/[\r\n]/g, "");
+            await plugin.saveAll();
+          }));
+        new Setting(host).setName(englishReadingLabel("同步生词到 Anki", "Sync vocabulary to Anki"))
+          .setDesc(englishReadingLabel("先打开桌面版 Anki 并安装 AnkiConnect。将生词本中的词同步到上述牌组。", "Open Anki desktop with AnkiConnect installed, then sync saved vocabulary to the deck above."))
+          .addButton(button => button.setDisabled(!Platform.isDesktopApp).setButtonText(englishReadingLabel("同步生词到 Anki", "Sync vocabulary to Anki")).onClick(async () => {
+            button.setDisabled(true);
+            try { await syncVocabularyNote(plugin); }
+            finally { button.setDisabled(false); }
+          }));
       },
       look: (host) => this._groupAppearance(host),
       notes: (host) => this._tabNotes(host),
