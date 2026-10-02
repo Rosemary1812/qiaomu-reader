@@ -8840,25 +8840,7 @@ const ReadSettingsModal = class extends Modal {
       settings.lineHeight = Math.round(Number(lineRange.value) * 20) / 20; await this._apply(true);
     });
     colA.createDiv("qiaomu-reader-rs-h").setText(englishReadingLabel("英文 EPUB 辅助阅读", "English EPUB assistance"));
-    new Setting(colA).setName(englishReadingLabel("词上中文小注", "Chinese glosses above words"))
-      .setDesc(englishReadingLabel("用本地词典标记高于当前英语水平的词，无需 AI。", "Show offline dictionary glosses for words above your level; no AI needed."))
-      .addToggle(toggle => toggle.setValue(!!settings.englishGlossEnabled).onChange(async value => {
-        settings.englishGlossEnabled = value;
-        await this._apply(true);
-        for (const { doc } of view.engine?.contents() || []) {
-          if (!value) { view._englishGlossLayers?.get(doc)?.remove(); view._englishGlossLayers = new WeakMap(); }
-          else void refreshEnglishGlosses(view, doc);
-        }
-      }));
-    new Setting(colA).setName(englishReadingLabel("我的英语水平", "My English level"))
-      .setDesc(englishReadingLabel("只标注高于该等级的词。", "Only annotate words above this level."))
-      .addDropdown(dropdown => {
-        for (const level of ["A1", "A2", "B1", "B2", "C1", "C2"]) dropdown.addOption(level, level);
-        dropdown.setValue(settings.englishCefrLevel || "B1").onChange(async level => {
-          settings.englishCefrLevel = level; await this._apply(true);
-          for (const { doc } of view.engine?.contents() || []) void refreshEnglishGlosses(view, doc);
-        });
-      });
+    buildEnglishGlossSettings(colA, view.plugin);
     new Setting(colA).setName(englishReadingLabel("选中句子即 AI 翻译", "Translate selected passages with AI"))
       .setDesc(englishReadingLabel("拖选英文句子或段落后生成中文译文；选中单词始终使用本地词典。", "Translate selected sentences or passages with AI; selected words use the offline dictionary."))
       .addToggle(toggle => toggle.setValue(settings.englishAutoTranslate !== false).onChange(async value => {
@@ -13472,6 +13454,45 @@ function withSliderValue(slider, digits = 0) {
   update();
   return slider;
 }
+function buildEnglishGlossSettings(host, plugin) {
+  const settings = plugin.settings;
+  const apply = async () => {
+    await plugin.saveAll();
+    const readers = plugin.app.workspace.getLeavesOfType(VIEW_TYPE).map(leaf => leaf.view);
+    if (plugin._openReaderModal) readers.push(plugin._openReaderModal);
+    for (const view of readers) {
+      if (view.file?.extension !== "epub") continue;
+      view.applyVars?.();
+      view._applyTheme?.();
+      if (view.bookHtml) {
+        if (typeof view.repaginate === "function") await view.repaginate();
+        else await view._repaginate?.();
+      }
+      for (const { doc } of view.engine?.contents() || []) {
+        view._englishGlossLayers?.get(doc)?.remove();
+        view._englishGlossLayers?.delete(doc);
+        if (settings.englishGlossEnabled) await refreshEnglishGlosses(view, doc);
+      }
+    }
+  };
+  new Setting(host).setName(englishReadingLabel("单词上方显示中文释义", "Chinese glosses above words"))
+    .setDesc(englishReadingLabel("英文 EPUB 中，自动标注高于你英语水平的词。使用本地词典，无需 AI。", "Annotate words above your English level in EPUB books using the offline dictionary; no AI needed."))
+    .addToggle(toggle => toggle.setValue(!!settings.englishGlossEnabled).onChange(async value => {
+      settings.englishGlossEnabled = value;
+      await apply();
+    }));
+  new Setting(host).setName(englishReadingLabel("我的英语水平", "My English level"))
+    .setDesc(englishReadingLabel("只标注高于该等级的词。", "Only annotate words above this level."))
+    .addDropdown(dropdown => {
+      const names = { A1: "入门", A2: "基础", B1: "中级", B2: "中高级", C1: "高级", C2: "精通" };
+      for (const level of Object.keys(names)) dropdown.addOption(level, englishReadingLabel(`${level} · ${names[level]}`, level));
+      dropdown.setValue(settings.englishCefrLevel || "B1").onChange(async level => {
+        settings.englishCefrLevel = level;
+        await apply();
+      });
+    });
+}
+
 const SettingsTab = class extends PluginSettingTab {
   _group(c, { name, desc, build }) {
     new Setting(c)
@@ -13560,6 +13581,7 @@ const SettingsTab = class extends PluginSettingTab {
     return [
       { id: "look", label: qiaomuReaderTranslate("reading-appearance") },
       { id: "read", label: qiaomuReaderTranslate("page-turning-2") },
+      { id: "english", label: englishReadingLabel("英文阅读", "English reading") },
       { id: "notes", label: qiaomuReaderTranslate("notes") },
       { id: "translate", label: qiaomuReaderTranslate("ai-translation") },
       { id: "data", label: qiaomuReaderTranslate("data") },
@@ -13575,6 +13597,10 @@ const SettingsTab = class extends PluginSettingTab {
   _drawSettingsTab(body) {
     const drawers = {
       read: (host) => this._tabReading(host),
+      english: (host) => {
+        this._sectionIntro(host, englishReadingLabel("英文辅助阅读", "English reading assistance"), englishReadingLabel("设置单词上方的中文释义，不需要连接 AI 服务。", "Configure Chinese word glosses without connecting an AI service."));
+        buildEnglishGlossSettings(host, this.plugin);
+      },
       look: (host) => this._groupAppearance(host),
       notes: (host) => this._tabNotes(host),
       translate: (host) => this._tabTranslate(host),
