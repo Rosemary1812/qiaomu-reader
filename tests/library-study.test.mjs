@@ -112,6 +112,26 @@ test("a later book selection cancels pending library highlight opening", async (
 });
 
 
+test("library list rows keep the same open, notes and menu actions", () => {
+  const x = setup();
+  x.host.replaceChildren();
+  x.library.renderRow(x.host, x.file);
+  const row = x.host.querySelector(".qiaomu-reader-lib-row");
+  assert.ok(row);
+  assert.equal(x.host.querySelector(".qiaomu-reader-lib-card"), null);
+  assert.equal(row.querySelector(".qiaomu-reader-lib-book-title").textContent, "Example");
+  assert.equal(row.querySelector(".qiaomu-reader-lib-note-count").textContent, "library-note-count:1");
+  const labels = [...row.querySelectorAll(".qiaomu-reader-lib-action-label")].map(el => el.textContent);
+  assert.deepEqual(labels, ["library-continue", "library-view-notes"]);
+  row.querySelector(".qiaomu-reader-lib-action").dispatchEvent(new x.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  assert.equal(x.stats().reads, 1);
+  row.dispatchEvent(new x.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  assert.equal(x.stats().reads, 2);
+  row.querySelector(".qiaomu-reader-lib-morebtn").click();
+  assert.equal(x.stats().menus, 1);
+  assert.equal(x.stats().reads, 2);
+});
+
 test("overlapping library refreshes render only the newest content", async () => {
   const x = setup(), library = x.library;
   library.containerEl = library.modalEl = library.contentEl = x.host;
