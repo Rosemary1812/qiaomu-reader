@@ -680,12 +680,32 @@ function showReadingHeatmap(parent, plugin, options = {}) {
       ? qiaomuReaderTranslate("0-day-streak", streak)
       : `${qiaomuReaderTranslate("today")} ${fmtReadTime(log[todayKey] || 0)}`)
     : "";
-  return Boolean(mountReadingHeatmap(parent, model, {
-    caption,
+  let target = parent;
+  let details;
+  if (options.collapsible) {
+    details = parent.createEl("details", { cls: "qiaomu-reader-lib-heat-details" });
+    details.open = plugin.settings.libraryHeatmapExpanded === true;
+    details.createEl("summary", { text: `${englishReadingLabel("阅读热力图", "Reading heatmap")} · ${caption}` });
+    target = details.createDiv("qiaomu-reader-lib-heat-body");
+  }
+  const mount = () => mountReadingHeatmap(target, model, {
+    caption: options.collapsible ? "" : caption,
     labelledBy: options.labelledBy || "",
     formatTime: fmtReadTime,
     formatMonth: heatMonthLabel,
-  }));
+  });
+  if (!details) return Boolean(mount());
+  let mounted = false;
+  const update = () => {
+    if (details.open && !mounted) { mount(); mounted = true; }
+  };
+  update();
+  details.addEventListener("toggle", () => {
+    plugin.settings.libraryHeatmapExpanded = details.open;
+    void plugin._saveLocalData();
+    update();
+  });
+  return true;
 }
 // Reading-time tracking. Each open reader runs one interval that accrues
 // seconds into the plugin day/lifetime logs, flushing to disk every
@@ -11704,7 +11724,7 @@ const LibraryModal = class extends Modal {
     if (!contentEl.isConnected || this._libraryRender !== render) return;
     const folder = qiaomuReaderPath(this.plugin.settings.booksFolder);
     const files = this._libVaultBooks(folder);
-    showReadingHeatmap(contentEl, this.plugin, { caption: true });
+    showReadingHeatmap(contentEl, this.plugin, { caption: true, collapsible: true });
     if (files.length === 0) {
       this._buildLibEmpty(contentEl, folder);
       return;
