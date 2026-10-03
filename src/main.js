@@ -1,3 +1,4 @@
+import { BookDiscoveryModal } from "./book-discovery-modal.js";
 import { selectionActionPreferences } from "./selection-preferences.js";
 import { watchQuietUi } from "./quiet-ui.js";
 import { STARTER_BOOKS } from "./starter-book-data.js";
@@ -11955,6 +11956,8 @@ const LibraryModal = class extends Modal {
       calibre.createSpan({ cls: "qiaomu-reader-lib-add-label", text: calibreText });
       this._activateOnClick(calibre, () => this.plugin.openCalibrePicker(this));
     }
+    const discover = actions.createEl("button", { cls: "qiaomu-reader-lib-find", text: qiaomuReaderTranslate("find-books"), attr: { type: "button" } });
+    discover.addEventListener("click", () => new BookDiscoveryModal(this.app, this, qiaomuReaderTranslate).open());
     return hdr;
   }
   _buildLibTools(hdr) {
@@ -12242,6 +12245,7 @@ const LibraryModal = class extends Modal {
     if (ok) new Notice(qiaomuReaderTranslate("books-added-0", ok) + (rejected.length ? " · " + qiaomuReaderTranslate("skipped-0", rejected.length) : ""));
     if (errors.length) new Notice(qiaomuReaderTranslate("could-not-add-0", errors.join(", ")));
     if (ok > 0) this._refresh();
+    return ok;
   }
   _refresh() {
     this.contentEl.empty();

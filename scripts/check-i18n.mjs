@@ -196,7 +196,7 @@ if (!source.includes('body.createDiv("qiaomu-reader-rs-card qiaomu-reader-rs-the
 if (/\bname:\s*qiaomuReaderTranslate\("(?:yellow|green|blue|pink)"\)/.test(source)) {
   errors.push("Highlight colour labels are translated eagerly before the saved language is loaded");
 }
-if (!source.includes('import { HL_COLOR_SWATCHES } from "./highlight-colors.js"')
+if (!/import \{[^}]*\bHL_COLOR_SWATCHES\b[^}]*\} from "\.\/highlight-colors\.js"/.test(source)
   || !source.includes("HL_COLORS = HL_COLOR_SWATCHES.map(([id, name, css]) => ({ id, label: () => qiaomuReaderTranslate(name), css }))")) {
   errors.push("Highlight colour labels are not translated lazily through the swatch table");
 }

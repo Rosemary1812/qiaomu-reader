@@ -1,6 +1,24 @@
 // Generated from the complete source UI dictionary and reviewed for core reading terms.
 // Keep placeholders, Markdown and HTML structure identical to the source strings.
 export const QIAOMU_READER_ZH_CN = {
+  "find-books": "找书",
+  "find-books-intro": "搜索古腾堡书籍，下载后直接加入书库。",
+  "book-title-or-author": "书名或作者",
+  "browser-book-sources": "去其他网站搜索",
+  "external-book-source-hint": "在浏览器中打开搜索结果；下载的文件可通过「添加图书」导入。",
+  "searching-books": "正在搜索…",
+  "no-books-found": "没有找到图书，请试试其他书名或作者。",
+  "book-search-failed": "搜索失败，请检查网络后重试。",
+  "book-page": "书籍页面",
+  "download-to-library": "加入书库",
+  "downloading-book": "正在下载…",
+  "book-download-failed": "下载或导入失败，请重试或打开书籍页面。",
+  "book-import-finished": "已加入书库",
+  "book-already-in-library": "已在书库中",
+  "gutenberg-results-note": "Project Gutenberg",
+  "gutenberg-search-hint": "输入书名或作者开始搜索。",
+  "book-search-required": "请先输入书名或作者。",
+
   "selection-toolbar": "选文工具栏",
   "selection-show-labels": "显示按钮文字",
   "selection-hidden-in-more": "隐藏的功能仍可从“更多”和右键菜单使用。启用翻译后显示翻译按钮。",

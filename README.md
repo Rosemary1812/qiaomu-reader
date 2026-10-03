@@ -1,318 +1,140 @@
-# Qiaomu Reader · 非官方增强版
+# Qiaomu Reader · 自用增强分叉
 
-**中文** · [English](#english) · [增强版下载](https://github.com/Rosemary1812/qiaomu-reader/releases) · [问题反馈](https://github.com/Rosemary1812/qiaomu-reader/issues) · [上游官方版本](https://github.com/joeseesun/qiaomu-reader)
+[上游仓库](https://github.com/joeseesun/qiaomu-reader) · [本分叉 Releases](https://github.com/Rosemary1812/qiaomu-reader/releases) · [反馈问题](https://github.com/Rosemary1812/qiaomu-reader/issues) · [提交 PR](https://github.com/Rosemary1812/qiaomu-reader/pulls) · [English](#english)
 
-> [!IMPORTANT]
-> 这是由 [Rosemary1812](https://github.com/Rosemary1812) 维护的非官方增强版，基于 [向阳乔木的 Qiaomu Reader](https://github.com/joeseesun/qiaomu-reader) 修改，与 Obsidian 社区插件市场中的官方版本并不相同。社区市场仍会安装上游官方版。
->
-> 增强版暂时沿用插件 ID `qiaomu-reader`，因此不能和官方版同时启用。安装前请备份仓库、关闭官方版，并阅读下方的[安装说明](#安装)。
+这是 [@Rosemary1812](https://github.com/Rosemary1812) 基于 [向阳乔木的 Qiaomu Reader](https://github.com/joeseesun/qiaomu-reader) 维护的**非官方分叉**。原项目提供 Obsidian 内的电子书阅读、划线、批注、阅读笔记和可选 AI 伴读；本分叉主要围绕个人阅读习惯，增加英文辅助阅读、书库管理和交互调整。
 
-> 不离开书页，读懂一个观点，留下一条真正有用的笔记。
-> Read, ask, and keep what matters — without leaving your book in Obsidian.
+**目前主要用于自用，尚未经过长时间、高强度和多设备使用验证，可能存在 bug。** 部分功能只通过自动测试或个人桌面调试，不能视为完整验收。欢迎试用、反馈问题和提交 PR，尤其欢迎复现与修复。
 
-**当前定位：非官方增强版。** 本仓库适合希望测试增强功能、并愿意通过 BRAT 或手动方式更新的用户。希望使用上游稳定版时，请从 [Obsidian 官方插件页](https://community.obsidian.md/plugins/qiaomu-reader) 安装。
+下面描述的是本仓库 `main` 的代码，更新于 **2026-10-03**。GitHub Release 可能滞后于 `main`，安装已发布版本时请核对发行说明。
 
-![Qiaomu Reader 4.2.4 内置书库：六本中英文公版电子书，包含真实封面、继续阅读、划线数量与阅读笔记入口](docs/assets/showcase-4.2.4-library.jpg)
+## 与上游的关系
 
-**安装后，书架里就有六本书。** 从《道德经》《唐诗三百首》《世说新语》或三本英文经典开始，直接体验阅读、划线和做笔记，无需先找书或配置 AI。
+- EPUB、PDF、FB2、MOBI、AZW3、CBZ 阅读、阅读笔记、原文回跳、主题、基础字体导入和 AI 伴读来自上游，保留原作者与第三方项目的署名。
+- 本分叉已集成上游至 4.2.17 的一批修复，包括凭据设置、大型 PDF 内存、iOS PDF 打开和沉浸阅读等。集成这些修复不代表本分叉已完成对应平台的实机验证。
+- 核对时上游已到 4.5.1。Qiaomu Agent、Home 联动和近期部分 EPUB／Android 修复尚未合入；找书入口已单独适配。本仓库不会自动跟随上游的所有功能与发行版本。
+- Calibre 导入已回馈并合入上游；上游 4.5.0 也有查词、生词本和 Anki，但与本分叉采用不同实现。下面同时列出新增能力与交互差异，不将这些共有功能称为独有。
+- 下表记录本分叉增加或调整的内容；上游也在持续演进，并非对上游最新版本的永久功能缺失声明。历史记录见 [CHANGELOG.md](CHANGELOG.md)。
 
-Qiaomu Reader 是中文优先的 Obsidian EPUB、PDF、FB2、MOBI、AZW3 和 CBZ 阅读器。它把**舒适阅读 → 就地提问 → 保存笔记 → 返回原文**放在同一个工作流里，减少在阅读器、聊天窗口和笔记应用之间来回复制。
+## 本分叉增加或调整了什么
 
-阅读本身完全离线，每本书关联一篇 Markdown 阅读笔记；AI 是可选能力，由你选择服务并主动启用。
+| 功能 | 本分叉的改动 | 在哪里使用 |
+| --- | --- | --- |
+| 找书 | 复用上游古腾堡目录搜索与 EPUB 下载，适配本分叉导入流程；其他来源仅单独点击外部搜索，不自动打开浏览器 | 书库 → 找书 |
+| 离线英文查词 | 单词释义卡片、语境解释入口；调整卡片间距、关闭按钮及点击外部关闭 | 英文 EPUB 中点击单词或页内释义 |
+| 英文页内小注 | 根据英语水平，在较难单词上方显示中文释义；处理句首词、释义重叠与点击 | 插件设置 → 英文阅读，开启小注并设置英语水平 |
+| 生词本与 Anki | 保存单词、释义、例句和书籍来源到 Markdown 生词本；桌面端可通过 AnkiConnect 同步 | 单词卡片保存生词；插件设置 → 英文阅读 → 同步生词到 Anki，或同名命令 |
+| 虚拟合集 | 手动创建合集、加入或移除图书，不移动原书文件；调整合集管理入口 | 书库 → 新建合集及图书菜单 |
+| 书库列表与排序 | 网格／列表切换；按最近打开或阅读时间排序；移除顶部继续阅读卡片与列表重复按钮 | 书库；有记录的最近打开图书优先显示 |
+| 封面操作 | 桌面网格的三点菜单在封面 hover 或键盘聚焦时显示，触控设备保留入口 | 书库网格封面 |
+| 阅读热力图 | 按每日阅读目标显示一年记录；调整宽度和月份对齐，支持折叠，随书库内容滚动 | 书库 → 阅读热力图；阅读统计 |
+| EPUB 连续滚动 | 跨章节上下滚动；修复从封面向下滚动的稳定性，目录高亮当前章节 | 阅读设置 → 翻页与布局 → 上下滚动 |
+| 阅读快捷键 | Vim 风格导航、Windows 快捷键适配 | 阅读器内；快捷键与适用模式见设置 |
+| 阅读字体 | 增加 OpenDyslexic；中文与英文字体分别设置，支持本书覆盖全局字体 | 插件设置 → 阅读外观，或书内阅读设置 → 文字与背景 |
+| 自定义划线颜色 | 色盘与 HEX 输入、最近使用颜色、可设默认色；兼容已有预设颜色 | 选文工具栏 → 颜色菜单 → 自定义颜色… |
+| 面板与按钮 | 统一目录、阅读设置和书库控件，收紧间距、调整信息分组；阅读设置标签改为文字与下划线 | 目录、阅读设置、书库 |
+| 兼容性与导入修复 | Calibre 导入、封面、书库操作、GUI 启动时 Grok ACP 路径发现等调整 | 桌面书库与 AI 服务配置 |
 
-[安装与快速开始](#安装) · [增强版改动](#增强版改动) · [功能导览](#功能导览) · [构建验证](https://github.com/Rosemary1812/qiaomu-reader/actions) · [GPL-3.0 许可](LICENSE)
+中文与英文字体按字符范围分别生效，混排文本也可以使用不同字体；**不能替换 PDF 原页的正文字体**。离线查词和小注不需要 AI，语境解释需要配置并主动调用 AI。Anki 同步需要桌面 Anki 已打开并安装 AnkiConnect。
 
-**截图版本：4.2.4。** 以下五张截图均来自安装正式 Release 文件的 Obsidian 1.13.7，展示内置书架、选文操作、划线笔记、AI 伴读和 PDF 原页。使用隔离演示仓库、公版示例书与原创 PDF；AI 对话明确标注为界面演示，未调用模型。详见[截图与版本核验](docs/showcase.md)。
+此前尝试的书籍标签 PR #10 已废弃，未合入 `main`，不属于当前功能。
 
-## 增强版改动
+## 哪些已经自测，哪些还待验证
 
-截至 2026-09-26，本仓库在上游功能基础上增加或调整了：
+这里区分三种证据：**自动测试**是代码、DOM 或模拟接口检查；**桌面自测**是个人 Obsidian 中的有限操作与界面调试；**待验证**表示没有完整的真实使用记录。它们都不代表长期稳定性保证。
 
-- 英文单词离线词典、词义查询和页内小注，短语或句子仍可交给 AI 解释。
-- EPUB 跨章节连续滚动、目录当前章节高亮，以及封面向下滚动稳定性修复。
-- Vim 风格阅读快捷键、Windows 快捷键适配和 OpenDyslexic 阅读字体。
-- 书库操作、封面显示、Calibre 导入和 Grok ACP 路径检测改进。
-- 已同步上游 4.2.17 的凭据设置、大型 PDF 内存、iOS PDF、沉浸阅读和 DeepSeek 回答预算修复。
+截至 2026-10-03，在 macOS / Obsidian 1.13.7 的个人仓库中：
 
-完整记录见 [CHANGELOG.md](CHANGELOG.md)。上游 4.3.0 的 Qiaomu Agent 功能尚未合入；我们会先确认它与现有 AI 伴读的交互和数据边界，再决定是否采用。
+| 范围 | 已完成的验证 | 尚未覆盖的部分 |
+| --- | --- | --- |
+| 找书 | 个人 Obsidian 中搜索古腾堡、下载并导入《The Enchanted April》；有目录解析、导入失败、并发去重与关闭弹窗测试 | 外部站点实际可达性、移动端和慢网仍需验证 |
+| 英文页内小注与单词卡片 | 个人书籍中调试释义间距、卡片关闭交互，确认设置开关可见；有词典、小注相关自动测试 | 大量不同 EPUB 排版、词汇分级准确性、长期阅读 |
+| 虚拟合集与列表 | 个人书库中调试合集管理、搜索控件和列表入口；有合集与列表自动测试 | 大书库、跨设备同步及异常数据恢复 |
+| 阅读热力图 | 使用模拟阅读数据查看布局，调整等宽、月份对齐与折叠；有日期、等级与 DOM 测试 | 模拟数据不证明真实阅读时长采集准确；长期统计仍需验证 |
+| 生词本 | 有 Markdown 往返、去重、卡片字段及模拟 Anki 接口测试；确认设置中的同步入口 | 真实 AnkiConnect 连接、建卡及重复同步尚未实测 |
+| 自定义颜色与中英文字体 | 已构建、部署并重启个人 Obsidian；确认两个字体控件可见；有色值校验、字体覆盖和字符范围测试 | 色盘完整交互、不同字体与阅读引擎的实际显示、笔记导出需进一步人工检查 |
+| 书库与阅读面板 UI | 已部署个人 Obsidian，按实际使用反馈迭代 | 最新面板与 hover 状态尚未完成全部视觉回归，主题适配仍需反馈 |
+| 连续滚动、快捷键及导入修复 | 有连续滚动、快捷键、Calibre 和引擎集成相关自动测试 | 不等同于全格式、全平台实机验收 |
+| 移动端、Windows、其他 AI 服务 | 保留相关代码与自动检查 | 本轮未做完整实机与真实服务验证；桌面窄窗口不等于手机测试 |
 
-## 你会得到什么
+当前 `main` 的 **325 项自动测试通过**，ESLint、生产构建与发布产物校验通过；本地安装文件也与构建产物核对一致。测试数量是当前快照，不代表 325 项真实用户场景均已人工验证。测试源码见 [tests/](tests/)。
 
-| 能力 | 实际效果 |
-| --- | --- |
-| 内置阅读器 | EPUB 可重排；PDF 保留原页，独立缩放，图表不被拆散；FB2、MOBI、AZW3、CBZ 由同一引擎渲染 |
-| 中文排版 | 仅内置朱雀仿宋常用字子集；支持选择本机字体、导入字体文件，缺字使用系统字体回退 |
-| 阅读主题 | 纸白、暖纸、青瓷、月白和夜间；只改变书页，工具栏跟随 Obsidian |
-| 就近批注 | 选中文字后完成三色划线、复制、评论和创建摘录笔记 |
-| 专用阅读笔记 | 每本书自动关联一篇 Markdown 笔记，汇总划线与评论 |
-| 精确返回原文 | 笔记中的 `↩` 可跳回原书对应段落 |
-| 阅读连续性 | 自动保存位置、可命名位置标记；搜索后能返回原阅读点 |
-| 就地 AI 对话 | 阅读和聊天并排；按书管理对话，选文、当前页或文本 PDF 全文作为上下文 |
-| 流式 Markdown | 回答边输出边渲染；表格、任务列表、引用、代码块等交给 Obsidian Markdown 渲染器 |
-| 回答成为笔记 | 保存完整 AI 回答，本地提取可修改标题；独立保存或追加到本书笔记 |
-| 少打断的交互 | 快捷问题直接可见；草稿按书落盘；专注阅读保留右侧 AI，不带回左侧文件树 |
-| 自选 AI 服务 | 保留自定义提示词；支持 CLI / ACP、国产模型、OpenAI 兼容接口及本地模型 |
+旧截图与演示记录见 [docs/showcase.md](docs/showcase.md)，主要展示上游共享基线 4.2.4，**不代表本分叉当前界面**。阅读工作流的历史验证记录见 [docs/reading-workflow-plan.md](docs/reading-workflow-plan.md)。
 
-## 功能导览
+## 安装与更新
 
-### 1. 从书架开始，接着上次的位置读
+> 本分叉仍沿用插件 ID `qiaomu-reader`，与官方版本使用同一个插件目录，不能作为两个独立插件并存。社区市场安装或更新 Qiaomu Reader 可能将本分叉替换为上游版本。请备份阅读数据，并确认更新来源。
 
-首页主图展示插件内置的六本中英文公版书，每本都有封面。书库提供继续阅读、搜索、阅读状态和“有划线”筛选；书名下方直接显示划线数量与阅读笔记入口。也可以添加自己的 EPUB、PDF、MOBI 等图书。
+### BRAT
 
-**桌面端可以从本机 [Calibre](https://calibre-ebook.com/) 书库按需加入图书。** 在书库点击「从 Calibre 添加」，或使用命令面板。默认读取书库里的 `metadata.db`（需要 Python 3）；若没有 Python，则回退到 `calibredb`。选定的 EPUB / PDF / MOBI 等文件会拷贝进当前仓库，不会把整座 Calibre 书库挂进 Obsidian。移动端不提供此入口。
+1. 备份 Obsidian 仓库及 `.obsidian/plugins/qiaomu-reader/`，禁用已安装的官方版。
+2. 安装并启用 BRAT，选择 **Add beta plugin**，输入 `Rosemary1812/qiaomu-reader`。
+3. 启用增强版，重新打开图书检查阅读位置、笔记与设置。后续通过该分叉的 BRAT 订阅更新。
 
-![从 Calibre 按需加入书库](docs/assets/calibre-import.png)
+BRAT 安装依赖本仓库已发布的 Release；未发布的 `main` 改动需要本地构建。
 
-### 2. 选中一句话，就地划线、批注或提问
+### 手动安装
 
-![4.2.4 选文工具栏：划线与颜色下拉、批注、问 AI、复制；正文使用青瓷主题与双页布局](docs/assets/showcase-4.2.4-selection.jpg)
-
-**4.2.7 更新：** AI 助读更名为 AI 伴读；宽屏桌面首次打开书时展示侧栏，并记住主动关闭状态。未配置服务可直接在侧栏完成配置。翻译结果可保存到本书笔记、当前打开的笔记、新笔记或今日笔记，同时保留原文和位置链接。
-
-**4.2.6 更新：** 选文工具栏默认仅显示图标，启用翻译后显示翻译按钮。在「设置 → 翻页操作 → 选文工具栏」可调整按钮显示与顺序、开启文字标签；隐藏功能仍在“更多”和右键菜单中。AI 回复的“查看原文”支持跨章节与重新打开原书定位。
-
-选中文字，常用操作出现在选文旁边；右键也能使用这些功能。划线颜色通过下拉菜单切换，三种颜色使用统一样式。朱雀仿宋随插件离线提供，也可选择本机字体或导入字体文件；主题、字号、行距与单/双页布局可在阅读设置中调整。书页背景覆盖阅读区域，工具栏跟随 Obsidian。
-
-### 3. 划线成为笔记，还能回到原文
-
-![4.2.4 划线与笔记并排：左侧原书粉色划线，右侧 Markdown 阅读笔记包含引文、回跳链接与批注](docs/assets/showcase-4.2.4-notes.jpg)
-
-每本书关联一篇 Markdown 阅读笔记。划线与批注自动汇总，引文右侧的 `↩` 链接用于返回书中对应位置。原文、自己的理解和来源留在一起，后续可以继续在 Obsidian 中整理与连接。
-
-### 4. 需要时，围绕选文和 AI 讨论
-
-![4.2.4 AI 伴读：书页与对话并排，问题保留选文来源，快捷问题位于输入框上方；图中回答为明确标注的界面演示](docs/assets/showcase-4.2.4-ai.jpg)
-
-已打开 AI 伴读时，新选文自动更新待提问上下文；选中本身不会发送请求。快捷问题保持可见，非中文选文增加翻译入口。每条已发送问题保留当时的来源，之后翻页或切换选文不会改写旧问题。
-
-回答可以复制，或完整保存为独立 Markdown 笔记、追加到本书笔记；保存前可修改自动提取的标题。AI 是可选功能，配置服务后由你主动发送问题。图中固定示例仅展示交互，不代表模型效果或响应速度。
-
-### 5. PDF 保留原页面与图表
-
-![4.2.4 PDF 阅读：两页原创演示 PDF 并排呈现，保留双栏文字、图表和表格，顶部显示独立缩放控件](docs/assets/showcase-4.2.4-pdf.jpg)
-
-PDF 保留原始版式，支持独立缩放。有可靠文字层时，可选择、复制、搜索、划线、批注和向 AI 提问；扫描页仍能阅读和保存进度，但不提供没有文字层支撑的搜索或文字问答。
-
-目录、书内搜索和位置跳转集中在底栏。搜索支持结果高亮、`Enter` 下一处、`Shift+Enter` 上一处、`Esc` 关闭，并保留返回原阅读位置的入口。
-
-## 离线示例书
-
-从 4.2.5 起，首次打开书库会自动加入六本 EPUB 示例书，即使仓库已有书籍或 PDF 附件。此前被旧版自动跳过的安装也会在打开书库时补齐；不会覆盖同名文件，已经成功导入后主动删除的示例书不会再次自动添加。也可在设置 → 存储与同步 → 添加示例书中手动恢复。
-
-六本示例书的正文均无插图，配有封面：道德经、唐诗三百首、世说新语、Jekyll and Hyde、Alice in Wonderland 和 Meditations。英语作品保留英语版本，无现代中文译本。文件随插件打包，运行时不从古腾堡下载；这些版本在美国属于公版，其他地区需按当地版权规则判断。书籍保留 Project Gutenberg 的完整许可，与插件 GPL 许可分开，详见[版本、来源与许可](assets/starter-books/README.md)。
-
-## 安装
-
-### 安装非官方增强版
-
-增强版发布 GitHub Release 后，推荐通过 BRAT 安装和更新：
-
-1. 先备份 Obsidian 仓库，并在“设置 → 第三方插件”中关闭已安装的官方 Qiaomu Reader。
-2. 从社区插件市场安装并启用 **BRAT**。
-3. 打开 BRAT → **Add beta plugin**，输入 `Rosemary1812/qiaomu-reader`。
-4. 在“第三方插件”中启用 **Qiaomu Reader**，重新打开一本书确认阅读位置和设置正常。
-
-> [!WARNING]
-> 增强版暂时使用与官方版相同的插件 ID `qiaomu-reader`。两者不能并存，文件都会位于 `.obsidian/plugins/qiaomu-reader/`。使用增强版期间，请通过 BRAT 更新；从社区插件页面重新安装或更新 Qiaomu Reader 可能会换回上游官方版。
-
-阅读、划线、离线词典和笔记不需要配置 AI。AI 服务默认关闭，只有在你选择服务、完成连接并主动发送问题后才会请求对应服务。
-
-<details>
-<summary>手动安装增强版</summary>
-
-从[本仓库最新 Release](https://github.com/Rosemary1812/qiaomu-reader/releases/latest)下载 `main.js`、`manifest.json` 和 `styles.css`，放入：
+从[本分叉 Releases](https://github.com/Rosemary1812/qiaomu-reader/releases) 下载同一发行版的 `main.js`、`manifest.json` 和 `styles.css`，放入：
 
 ```text
 <你的仓库>/.obsidian/plugins/qiaomu-reader/
 ```
 
-重新加载 Obsidian 后启用插件。三个文件必须来自同一个 Release；不要混用上游和增强版文件。
+重新加载 Obsidian 并启用插件。更新时保留已有数据文件，不要混用上游与本分叉的构建文件。使用旧插件 `qiaomu-book-reader` 的用户，应先备份并禁用旧版，避免两个阅读器同时注册书籍格式。
 
-朱雀仿宋常用字子集内置于 `styles.css`，随三个插件文件安装；新增安装默认使用该字体，已有字体偏好保留。子集来自 v0.212 预览测试版，覆盖 7,554 个码点，未包含的字符使用系统字体回退。选择“自定义字体”后，可浏览本机已安装字体，或导入 TTF、OTF、WOFF、WOFF2 文件。导入字体随仓库同步；手机不能枚举本机字体时可使用文件导入。
+阅读、划线、离线词典和笔记可以离线使用。AI 是可选功能，主动发起请求时会将相应上下文发送给所选服务。CLI / ACP 和 Calibre 导入仅限桌面；扫描 PDF 没有可靠文字层时，不提供 OCR 或文字问答。
 
-其他字体的官方下载入口与安装方法见[字体说明](fonts/README.md)。
+AI 可选择 DeepSeek 等 API 服务、自定义 OpenAI 兼容接口或本地模型；也保留 Codex CLI、Claude Code CLI、Grok CLI 等账户方式。CLI 模式仅支持桌面版 Obsidian，需要先完成对应工具的安装与登录。API 凭据使用 Obsidian 的密钥库；所选服务的费用与数据处理由该服务决定。这些入口的存在不代表本轮已逐一验证真实连接。
 
-</details>
+内置字体与导入字体的说明见 [fonts/README.md](fonts/README.md)；示例书来源与许可见 [assets/starter-books/README.md](assets/starter-books/README.md)。
 
-<details>
-<summary>安装上游官方版本</summary>
-
-如果你不需要本仓库的增强功能，请从 [Obsidian 官方插件页](https://community.obsidian.md/plugins/qiaomu-reader)安装由**向阳乔木**维护的上游版本，或在 Obsidian 中进入“设置 → 第三方插件 → 浏览”，搜索 **Qiaomu Reader**。
-
-社区市场版本由上游仓库发布，不包含本仓库尚未回馈或合并的修改。官方版本的问题请提交到[上游 Issues](https://github.com/joeseesun/qiaomu-reader/issues)。
-
-</details>
-
-<details>
-<summary>旧版 Qiaomu Book Reader 用户迁移</summary>
-
-新版插件 ID 为 `qiaomu-reader`。先备份仓库并禁用旧版 Qiaomu Book Reader，再启用当前版本，避免两个阅读器同时注册同一文件类型。书籍与 Markdown 笔记保留在原位置。
-
-需要保留旧设置和阅读数据时，在两个插件均禁用的情况下，将 `.obsidian/plugins/qiaomu-book-reader/` 中的 JSON 数据文件复制到 `.obsidian/plugins/qiaomu-reader/`，**不要复制旧版 `manifest.json`**，并保留原件作为备份。旧笔记中的 `obsidian://qiaomu-book-reader` 回跳链接仍受支持。
-
-</details>
-
-## AI 辅助阅读
-
-“保存 AI 回复”把完整 Markdown 回答作为笔记正文，原文放在后面的来源区。标题在本地根据回答的主题标题、重点短语或内容句自动提取，过滤“总结”“关键概念”等通用小标题；保存前可修改，不额外调用模型。保存成功后按钮变为“已保存 · 打开笔记”，不会关闭对话，也不会自动抢走阅读焦点。
-
-未发送草稿按书保存在独立本地文件中（最多 30 本、每本最多 20,000 字符），关闭面板或重启后可恢复；生成中输入的新问题不会被上一轮完成动作清掉。插件不主动同步草稿，但第三方同步如果包含整个插件目录，仍可能复制它。新建对话保留当前草稿；已发送的来源固定在对应问题下。单条删除与批量清空都需要确认，删除当前对话后不会在关闭面板时重新写回。
-
-AI 默认关闭。启用后，文本型 PDF 会把整份可提取文字作为新对话的默认上下文；如果选中了原文，则本轮改用选文上下文做精读。常规 PDF 发送全文，超过 180,000 字符时按页均匀精简并明确标注，避免只截掉后半本。你可以通俗解释、举例、提炼要点、联系实际、换角度分析或生成测试题，并继续自由追问。书内“阅读设置”新增“AI 伴读”标签，可就近开关 AI、查看当前服务与模型、调节思考模式/强度和回答语言；API 密钥、接口地址等低频敏感配置仍留在插件系统设置。DeepSeek V4 可单独开关思考模式；模型提供思考过程时会单独显示，回答完成后自动折叠，不与正式回答混在一起。
-
-- 本机账号：Codex CLI、Claude Code CLI、Grok CLI、Kimi Code CLI、ZCode CLI。安装并登录一次后，插件可直接复用账号，无需再填 API 密钥。每个 CLI 分别记住自己的模型和思考强度；Grok 的常驻 ACP 会关闭后台自动更新，避免更新进程阻塞首字输出。
-- 国产模型：DeepSeek、Kimi、通义千问、智谱 GLM、MiniMax。
-- 聚合服务：硅基流动、豆包/火山方舟、OpenRouter。
-- 国际服务：OpenAI。
-- 本地模型：Ollama、LM Studio。
-- 高级配置：任意 OpenAI 兼容接口，可直接新建或选择 Obsidian 密钥；密钥、模型和接口地址按服务分别保存。
-
-API 密钥保存在 Obsidian 的密钥库中，不会写入插件 `data.json`。设置页可发送一条不含书籍内容的最短消息测试连接。
-
-CLI 模式会自动检测可执行文件和登录状态，在独立临时目录中运行，并拒绝工具、文件和终端权限。Grok 与 Kimi 使用 CLI 自带的 ACP；Codex 使用 [`codex-acp`](https://github.com/agentclientprotocol/codex-acp)，Claude 使用 [`claude-agent-acp`](https://github.com/agentclientprotocol/claude-agent-acp)，ZCode 目前使用社区 [`zcode-acp`](https://github.com/william0wang/zcode-acp)。同一阅读对话复用常驻进程与 ACP session，首轮发送阅读上下文，后续只发送新问题；切换或清空对话会使用新的 session。会话过期或 ACP 进程意外退出且尚未产生回答时，插件会自动重建并安全重试一次；登录、模型、会话和进程故障会分别提示。设置页会区分“原生 ACP”和“需单独安装适配器”，提供手动安装指引，并可分别检测 CLI 与适配器路径。插件不会自行安装或更新 CLI、适配器或其他依赖。CLI 模式仅支持桌面版 Obsidian。
-
-桌面 CLI 模式会检测仓库外的已安装可执行程序，并在独立临时目录运行；CLI 的登录与配置由对应工具管理。字体文件只在用户选择导入后读取并复制到仓库；本机字体枚举仅由点击字体选择按钮触发。
-
-## 界面语言
-
-支持简体中文、English、Русский、日本語、Español、Français、Deutsch、한국어 和 Português (Brasil)。在插件设置顶部选择语言；语言包随插件提供，切换和使用均不联网，日期按所选语言显示。默认仍为简体中文。
-
-设置页即时切换；已打开的书页和 AI 对话重新打开后使用新语言，原文、笔记和回答内容不会被翻译或改写。新增语言覆盖界面文案，翻译仍欢迎母语使用者反馈；俄语中的部分新增功能继续使用英语回退。
-
-## 外观与阅读设置
-
-插件设置的“外观”页和书内“阅读设置”使用同一组数据。书内弹窗按任务分为“阅读”和“AI 伴读”两个标签；主题、正文字体、字号和行距直接展示，分设备外观、电子墨水屏、对齐、插图和沉浸阅读等低频选项收在“更多阅读设置”中。弹窗只在竖向滚动，并为滚动条预留空间，不再遮住控件。
-
-## 阅读笔记如何工作
-
-首次打开一本书时，插件会创建或关联一份带有 `type: reading-note` 标记的专用 Markdown 笔记。之后的新划线和评论自动汇总到“划线与批注”章节；插件不会仅凭书名误把人物、项目或模板笔记当成阅读笔记。
-
-评论以普通正文显示在引文下方，不使用引用样式。每条引文末尾的 `↩` 是返回原书位置的链接。
-
-## 隐私与联网
-
-书籍、进度、划线、评论和笔记均在本地工作，无需账号，没有遥测、分析或广告。
-
-| 可选功能 | 发送内容 | 目标服务 |
-| --- | --- | --- |
-| 翻译所选文字 | 当前选中的段落 | Google Translate |
-| AI 辅助阅读 | 你主动附加的 PDF 全文、当前页或选中文本、书名和问题 | 你明确选择并配置的模型服务 |
-| 本机 CLI 账号 | 你主动附加的 PDF 全文、当前页或选中文本、书名和问题 | Codex、Claude、Grok、Kimi 或 ZCode 的云端服务 |
-| 本地 AI | 本轮附加的 PDF 全文、当前页或选文、书名与问题，以及必要的对话历史 | 你配置的 Ollama 或 LM Studio 地址；仅在本机地址且服务不转发时留在设备内 |
-
-联网功能均默认关闭。只有在你主动向 AI 提问时，文本型 PDF 才会在该对话首轮发送整书文字上下文；扫描 PDF 不发送页面图片或伪造 OCR 文本。
-
-本机 CLI 模式还会运行你选择的本地 CLI 程序，并使用其库外安装目录、账号登录状态与配置；不会把这些凭据复制到插件配置。CLI 是否联网取决于所选服务。
-
-## 从源码构建
-
-默认构建和社区验证构建均不包含依赖自动安装器。`npm run build:community` 输出到 `dist/community/`，不包含 ACP 自动安装器，保留手动安装指引、检测和常驻对话能力。增强版使用本仓库的 Release 或 BRAT 安装；Obsidian 官方社区插件页提供的是上游版本。
+## 开发与验证
 
 ```bash
 npm ci
 npm test
 npm run check:i18n
-npx eslint src/
+npx eslint src/ --max-warnings=0
 npm run build
 npm run verify:release
-npm run build:community
 ```
 
-构建产物是仓库根目录的 `main.js`、`styles.css` 和 `manifest.json`；可编辑样式位于 `src/styles.css`。发布文件大小由构建与发布校验脚本中的项目预算检查。唯一内置字体的来源、版本与许可见 [fonts/README.md](fonts/README.md) 和 [fonts/OFL.txt](fonts/OFL.txt)。
+构建生成的 `main.js` 和 `styles.css` 与 `manifest.json` 一起用于本地安装。版本号不等于上游同号发行版的内容，也不表示当前 `main` 已发布。
 
-### 验证与边界
+## 欢迎 Issue 与 PR
 
-- 当前工作流改造有模块/控制器测试、国际化检查、ESLint、标准及社区候选构建校验；真实桌面 Obsidian 验证覆盖阅读、搜索、回答保存和 PDF 缩放。详见[开发与验收记录](docs/reading-workflow-plan.md)。
-- CLI / ACP 仅限桌面；移动真机触控与软键盘仍待专项验证，桌面窄窗口不等于移动端验收。
-- 不内置 OCR，不承诺扫描 PDF 可以文字问答；不提供跨书语义检索，也不授予阅读 Agent 文件/终端工具权限。
-- 持久 ACP 会话减少重复启动开销，但首字速度仍受 CLI、模型、网络和上下文长度影响，目前没有可公开比较的性能基准。
-- 社区候选版仅供验证；增强版发布时只使用通过上述验证的同一份构建产物。
+这个分叉目前主要服务个人使用习惯，功能和界面还在调整。**欢迎提 PR**：bug 修复、兼容性改进、界面优化、测试和文档补充都很有帮助。小修复可以直接提交；较大的功能建议先开 Issue 讨论。
 
-## 维护与上游
+反馈问题时，请尽量提供：
 
-Qiaomu Reader 上游项目由 [向阳乔木](https://qiaomu.ai) 维护：
+- Obsidian 与插件版本、系统，以及安装来源／对应 commit。
+- 复现步骤、预期行为和实际行为。
+- 相关截图或错误日志；涉及书籍排版时，说明文件格式，提供可分享的最小样例。
 
-- X：[@vista8](https://x.com/vista8)
-- GitHub：[@joeseesun](https://github.com/joeseesun)
-- 乔木推荐：[tuijian.qiaomu.ai](https://tuijian.qiaomu.ai)
+PR 请从 `main` 创建分支，说明修改与验证范围。界面改动附真实 Obsidian 截图；外部服务功能请注明测试使用真实服务还是模拟接口。不要把尚未测试的部分写成已通过。更多约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-本非官方增强版由 [@Rosemary1812](https://github.com/Rosemary1812) 在 [Rosemary1812/qiaomu-reader](https://github.com/Rosemary1812/qiaomu-reader) 维护。增强版问题请提交到[本仓库 Issues](https://github.com/Rosemary1812/qiaomu-reader/issues)。本仓库保留上游作者、贡献者和第三方项目的版权及许可证声明。
+本分叉问题请提交到[本仓库 Issues](https://github.com/Rosemary1812/qiaomu-reader/issues)，官方版问题请提交到[上游](https://github.com/joeseesun/qiaomu-reader/issues)。
 
-项目含有改编自 [Elton Reader](https://github.com/swayinfo/elton-reader) 的代码，感谢 Elton Labs 的工作；这些部分保留 MIT 许可。来源、第三方开源软件和版权声明见 [NOTICE.md](NOTICE.md) 与 [LICENSE](LICENSE)；内置字体的来源与许可见 [fonts/README.md](fonts/README.md) 与 [fonts/OFL.txt](fonts/OFL.txt)。
+## 致谢
 
----
+感谢原作者 [向阳乔木 / @joeseesun](https://github.com/joeseesun) 及上游贡献者提供阅读器基础。本分叉由 [@Rosemary1812](https://github.com/Rosemary1812) 维护，保留原作者与第三方项目的版权及许可证声明。
 
-<a name="english"></a>
+项目包含改编自 [Elton Reader](https://github.com/swayinfo/elton-reader) 的代码。第三方来源与声明见 [NOTICE.md](NOTICE.md)，字体许可见 [fonts/OFL.txt](fonts/OFL.txt)。
 
-# English
+<a id="english"></a>
 
-> [!IMPORTANT]
-> This repository is an unofficial enhanced fork of [joeseesun/qiaomu-reader](https://github.com/joeseesun/qiaomu-reader), maintained at [Rosemary1812/qiaomu-reader](https://github.com/Rosemary1812/qiaomu-reader). The Obsidian Community directory installs the upstream official build and does not include this fork's additional changes.
->
-> The fork currently keeps the plugin ID `qiaomu-reader`, so it cannot coexist with the official build. Back up the vault and disable the official build before installing this fork.
+## English
 
-### Install the enhanced fork
+This is an **unofficial, personal-use fork** of [joeseesun/qiaomu-reader](https://github.com/joeseesun/qiaomu-reader), maintained by [@Rosemary1812](https://github.com/Rosemary1812). It has diverged from upstream and does not automatically include every upstream feature. Reading, notes and optional AI assistance are inherited from upstream.
 
-After an enhanced-fork GitHub Release is published, install BRAT from Obsidian Community plugins, choose **Add beta plugin**, and enter `Rosemary1812/qiaomu-reader`. Let BRAT manage subsequent fork updates. Reinstalling or updating Qiaomu Reader from the Community directory may replace the fork with the upstream build because both use the same plugin ID.
+Fork additions include offline English lookup and proficiency-based glosses, vocabulary notes and optional AnkiConnect sync, virtual collections and list view, a collapsible reading heatmap, continuous EPUB scrolling, Vim navigation, OpenDyslexic, separate Chinese/English fonts with per-book overrides, custom highlight colors, and reader/library UI adjustments. See the Chinese feature table above for entry points. PDF page fonts cannot be replaced. The abandoned tag PR #10 and upstream Qiaomu Agent support are not included. Upstream now also has lookup, vocabulary and Anki through a different implementation; Calibre import is shared. Book discovery was adapted separately: Gutenberg search/download plus optional external Anna’s Archive and Z-Library links.
 
-For manual installation, download `main.js`, `manifest.json`, and `styles.css` from the [same fork release](https://github.com/Rosemary1812/qiaomu-reader/releases/latest) and place them in `<vault>/.obsidian/plugins/qiaomu-reader/`.
+**Expect bugs. This fork has not undergone sustained heavy use or broad device testing. Issues and PRs are welcome.** As of 2026-10-03, 325 automated tests, lint, production build and artifact verification pass. Personal macOS/Obsidian checks cover selected UI flows; heatmap layout was tested using fake data. Real Anki sync is untested. New color/font features have automated checks and were deployed, but full visual and interaction regression remains pending. These checks do not imply all features are production-ready.
 
-### Install the upstream official build
+Install through BRAT using `Rosemary1812/qiaomu-reader`, or copy `main.js`, `manifest.json` and `styles.css` from the same fork release into `<vault>/.obsidian/plugins/qiaomu-reader/`. Back up first: this fork shares the official plugin ID, and Community plugin updates may replace it. Releases may lag behind `main`; build locally to test unreleased changes.
 
-**Available in the official directory:** open [Qiaomu Reader](https://community.obsidian.md/plugins/qiaomu-reader), select **Add to Obsidian**, then **Install → Enable** in Obsidian. If your browser does not open the app, install from inside Obsidian:
-
-1. Open **Settings → Community plugins**. Select **Turn on community plugins** if prompted.
-2. Select **Browse** and search for **Qiaomu Reader**.
-3. Choose **Qiaomu Reader** by **向阳乔木**, then select **Install → Enable**.
-4. Open the library from the left ribbon to try the bundled public-domain books or add your own. AI setup is optional.
-
-On desktop, **Add from Calibre** copies selected books from a local [Calibre](https://calibre-ebook.com/) library into the vault. Search uses `metadata.db` (Python 3) and falls back to `calibredb`. The whole Calibre library is not mounted into Obsidian. This entry is hidden on mobile.
-
-For upstream updates, use **Settings → Community plugins → Check for updates**, then update Qiaomu Reader. If you used Qiaomu Book Reader before, back up your vault and disable it before enabling the new plugin; see the [migration instructions](#安装).
-
-### Read, highlight and keep notes
-
-Qiaomu Reader is a Chinese-first reader for Obsidian supporting EPUB, PDF, FB2, MOBI, AZW3 and CBZ. PDF files retain their original fixed page layout; pages with a reliable text layer support selection, search, highlights, annotations and full-document or selected-text AI context, while scan-only pages provide original-page reading, progress and one book-level note without pretending OCR is available. The plugin keeps one dedicated Markdown reading note per book inside your vault.
-
-### A reading workflow, not just a chat window
-
-The five screenshots above show the published **4.2.4** release running in Obsidian 1.13.7: **the six-book starter library, selection actions, linked highlighting notes, optional AI assistance, and original PDF pages.** New users can start with Tao Te Ching, Three Hundred Tang Poems, Shishuo Xinyu, Alice in Wonderland, Jekyll and Hyde, or Meditations without finding a book or configuring AI first. The library includes covers, reading progress, highlight counts and note links.
-
-Since 4.2.5, the first library visit adds all six starter books even when the vault already contains ebooks or PDF attachments. Upgrades also repair installations previously skipped by older versions. Existing same-name files are preserved, and books deliberately deleted after a successful import are not recreated automatically. Use Settings → Storage & sync → Add starter books to restore them manually.
-
-Captures use an isolated demo vault, bundled public-domain books and an original sample PDF. The AI conversation is a visibly labeled fixture with no model call; it demonstrates the interface, not model quality or latency. See [capture and release evidence](docs/showcase.md).
-
-- Streamed answers render as Markdown while arriving, including tables, task lists, blockquotes and code blocks through Obsidian's renderer.
-- Built-in quick prompts sit above the input, with translation for non-Chinese selections. An open AI panel follows new selections; selection alone does not send a request.
-- Named reading bookmarks, bottom navigation, Chinese single-character search and a return point support continuity.
-- Focused reading keeps an already-open AI sidebar without reopening the file tree.
-- Chats are associated with books, with searchable/renameable history and immutable source context on sent questions.
-
-New installations default to a bundled Zhuque Fangsong reading subset (7,554 codepoints); missing glyphs fall back to system fonts. Select Custom font to browse installed fonts or import TTF, OTF, WOFF or WOFF2 files. Imported files sync with the vault; mobile platforms without font enumeration can use file import. The font is embedded in styles.css and installed with the plugin. Other fonts are user-installed; see [font downloads](fonts/README.md).
-
-The interface supports Simplified Chinese, English, Russian, Japanese, Spanish, French, German, Korean, and Brazilian Portuguese. Select a language at the top of plugin settings; all language packs are bundled for offline use. Reopen existing book tabs and chats to apply the new language there. Book text, notes, and AI responses are not translated by this setting. Some newer Russian UI strings still fall back to English.
-
-Fork installation, upstream installation, and replacement warnings are documented in the [installation section](#安装).
-
-User-selected font files are read only on import and copied into the vault. Enumerating system fonts happens only after pressing the font picker button. Desktop CLI mode detects user-installed executables and runs them in an isolated temporary directory outside the vault; CLI configuration and login are managed by the installed tool.
-
-Reading works fully offline. In-reader settings are split into Reading and AI Assistance tabs, keeping frequent AI controls close to the book while API keys and endpoint URLs remain in Obsidian plugin settings. Optional AI reading assistance includes built-in quick prompts and supports signed-in Codex CLI, Claude Code CLI, Grok CLI, Kimi Code CLI, and ZCode CLI accounts without additional API-key setup, plus DeepSeek, Kimi, Qwen, GLM, MiniMax, SiliconFlow, Doubao, OpenRouter, OpenAI, Ollama, LM Studio, and custom OpenAI-compatible endpoints. Custom endpoints can create or select an Obsidian secret directly, and each provider keeps its own secret, model, and endpoint override. CLI chats use persistent ACP sessions: Grok and Kimi provide ACP natively, while Codex, Claude, and ZCode use separately installed adapters. If an ACP session expires or its process exits before returning any content, the plugin rebuilds it and retries once; authentication, model, session, and process failures are reported separately. Grok ACP is launched with background auto-update disabled so an updater cannot delay the first streamed token. CLI providers are desktop-only and still send the page or selection you explicitly attach to their cloud service. AI is off by default and keys are stored with Obsidian SecretStorage.
-
-**New in 4.2.7:** The AI companion appears on the first book open on wide desktop windows and remembers when you close it. Configure a service directly in the sidebar. Save translations with their original passage and location link to the book note, an open note, a new note or today’s Daily Note.
-
-**New in 4.2.6:** Selection actions use icons by default, with translation shown when enabled. Configure labels, visibility and order under Settings → Page turning → Selection toolbar. Hidden actions remain in More and the context menu. AI source links can reopen the correct book and navigate across chapters.
-
-Saving an AI reply preserves its complete Markdown body with the source below it, either in a separate note or appended to the book's reading note. An editable title is extracted locally from the reply's topic, emphasis or content, with no extra model request. Saving keeps the chat open, and the saved action opens the existing note. Unsent drafts are persisted locally for up to 30 books (20,000 characters each) and survive sidebar closure/restarts; third-party syncing of the plugin folder may also copy them. Deleting conversations requires confirmation. Screenshots above were captured from the upstream published [4.2.4 release](https://github.com/joeseesun/qiaomu-reader/releases/tag/4.2.4). They document the shared baseline and do not claim to show every enhancement in this fork.
-
-### Verification and limits
-
-Use `npm ci`, `npm test`, `npm run check:i18n`, `npx eslint src/`, `npm run build`, `npm run verify:release`, and `npm run build:community` to reproduce the automated gates. See [screenshot evidence](docs/showcase.md) and [workflow checks](docs/reading-workflow-plan.md). Physical mobile-device validation is pending. There is no built-in OCR or cross-book semantic search. CLI providers are desktop-only; model costs and terms belong to the selected provider. Local-model requests stay on-device only when the configured endpoint is local and does not forward them. Persistent ACP reduces repeated startup work, but no comparative latency benchmark is claimed.
-
-## Community build
-
-Both the default build and the community build exclude dependency installation code. CLI adapters must be installed by the user. A separate community-candidate build is available with `npm run build:community` in `dist/community/`. It excludes the ACP dependency installer while retaining manual setup guidance, detection, and persistent chat.
-
-The upstream project is maintained by [Qiaomu](https://qiaomu.ai). This unofficial fork is maintained by [@Rosemary1812](https://github.com/Rosemary1812). Third-party notices and copyright information are preserved in [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE); bundled font provenance and licenses live under `fonts/`.
+For contributions, describe reproduction steps and validation scope, attach actual Obsidian screenshots for UI changes, and distinguish real-service tests from mocked tests. See [CONTRIBUTING.md](CONTRIBUTING.md). Attribution and licenses are preserved below.
 
 ## License
 

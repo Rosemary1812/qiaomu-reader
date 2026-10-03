@@ -6,6 +6,8 @@ This file records user-visible changes in the unofficial enhanced fork maintaine
 
 ### Fork enhancements
 
+- Adapted upstream book discovery: in-plugin Project Gutenberg search and EPUB import, with individually opened Anna’s Archive and Z-Library search links. Standard Ebooks and Wikisource are not included.
+
 - Added a one-year reading heatmap on the library and in reading statistics. Squares follow the daily goal, and reading days are kept for 400 days.
 - Added offline English word lookup and optional page glosses; longer selections can still use AI assistance.
 - English word cards can save a word to the vault vocabulary note and, when Anki desktop is open, to the deck 生词本. Phone reading keeps the note and syncs cards later from the desktop.

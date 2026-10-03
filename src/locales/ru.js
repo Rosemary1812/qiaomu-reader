@@ -1,6 +1,23 @@
 // Russian locale pack. Inherited Russian UI strings keep their original wording;
 // strings that were originally Chinese source keys are translated to Russian here.
 export default {
+  "book-search-required": "Введите название или автора.",
+  "gutenberg-search-hint": "Введите название или автора для поиска.",
+  "gutenberg-results-note": "Project Gutenberg",
+  "book-already-in-library": "Эта книга уже есть в библиотеке.",
+  "book-import-finished": "Книга добавлена в библиотеку. Можно читать.",
+  "book-download-failed": "Не удалось загрузить или импортировать книгу. Проверьте формат на странице книги или повторите попытку позже.",
+  "downloading-book": "Загрузка…",
+  "download-to-library": "Добавить в библиотеку",
+  "book-page": "Страница книги",
+  "book-search-failed": "Поиск недоступен. Проверьте подключение и повторите попытку.",
+  "no-books-found": "Книги не найдены. Попробуйте другой запрос.",
+  "searching-books": "Поиск…",
+  "external-book-source-hint": "Внешние сайты открываются в браузере. Импортируйте EPUB, PDF или MOBI, которые вы вправе использовать, через «Добавить книгу». Адреса и доступность сайтов могут меняться.",
+  "browser-book-sources": "Книжные сайты в браузере",
+  "book-title-or-author": "Название или автор",
+  "find-books-intro": "Ищите книги в Project Gutenberg и добавляйте их в библиотеку.",
+  "find-books": "Найти книги",
   "selection-toolbar": "Панель выделения",
   "selection-show-labels": "Показывать подписи",
   "selection-hidden-in-more": "Скрытые действия доступны в меню «Ещё» и контекстном меню. Кнопка перевода появляется после его включения.",
