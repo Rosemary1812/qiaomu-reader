@@ -122,7 +122,7 @@ test("library list rows keep the same open, notes and menu actions", () => {
   assert.equal(row.querySelector(".qiaomu-reader-lib-book-title").textContent, "Example");
   assert.equal(row.querySelector(".qiaomu-reader-lib-note-count").textContent, "library-note-count:1");
   const labels = [...row.querySelectorAll(".qiaomu-reader-lib-action-label")].map(el => el.textContent);
-  assert.deepEqual(labels, ["library-continue", "library-view-notes"]);
+  assert.deepEqual(labels, ["library-view-notes"]);
   row.querySelector(".qiaomu-reader-lib-action").dispatchEvent(new x.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   assert.equal(x.stats().reads, 1);
   row.dispatchEvent(new x.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));

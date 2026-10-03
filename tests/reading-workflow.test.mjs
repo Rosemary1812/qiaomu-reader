@@ -138,7 +138,7 @@ test("contents marks the chapter under the reading position and scrolls it into 
   let scrolled = 0;
   proto.scrollIntoView = function() { scrolled++; };
   const code = source.slice(source.indexOf("function prepareNavigationPanel("), source.indexOf("function pageForBlock("));
-  const build = vm.runInNewContext(`${code}; buildTocPanelFor`, { window, qiaomuReaderTranslate: (key) => key });
+  const build = vm.runInNewContext(`${code}; buildTocPanelFor`, { window, svgIcon() {}, qiaomuReaderTranslate: (key) => key });
   const panel = window.document.querySelector("section");
   const entries = [
     { label: "第三十三章", href: "c33" },

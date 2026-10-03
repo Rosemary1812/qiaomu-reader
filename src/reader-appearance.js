@@ -23,7 +23,7 @@ export function normalizeCustomFontFamily(value) {
   return names.join(", ");
 }
 
-export function resolveReaderFont(settings, fonts) {
+function resolveBaseReaderFont(settings, fonts) {
   if (settings.fontFamily === "custom") {
     if (settings.customFontId) {
       const font = importedReaderFonts(settings).find((item) => item.id === settings.customFontId);
@@ -32,6 +32,11 @@ export function resolveReaderFont(settings, fonts) {
     return normalizeCustomFontFamily(settings.customFontFamily) || fonts.georgia;
   }
   return fonts[settings.fontFamily] || fonts.georgia;
+}
+
+export function resolveReaderFont(settings, fonts) {
+  const base = resolveBaseReaderFont(settings, fonts);
+  return settings.englishFontFamily && fonts[settings.englishFontFamily] ? `"QBR Latin", ${base}` : base;
 }
 
 export function readerTextCss(settings, theme, fontFamily, host) {
@@ -72,4 +77,29 @@ export function syncPageButtons(view) {
     toolbar.insertBefore(previous, toolbar.querySelector(".qiaomu-reader-bot-center") || toolbar.firstChild);
     toolbar.append(next);
   }
+}
+
+export function bookFontSettings(settings, path) {
+  const override = settings.bookFonts?.[path];
+  return override ? { ...settings, fontFamily: override.fontFamily || settings.fontFamily, englishFontFamily: override.englishFontFamily || settings.englishFontFamily } : settings;
+}
+
+// Limit the Latin face to Latin characters so CJK glyphs fall through to the
+// Chinese font, even when that font also includes Latin glyphs.
+export function splitReaderFontCss(settings, fonts, doc) {
+  if (!settings.englishFontFamily || !fonts[settings.englishFontFamily]) return "";
+  const stack = fonts[settings.englishFontFamily];
+  const names = stack.split(",").map(x => x.trim().replace(/^['"]|['"]$/g, ""));
+  const sources = names.filter(x => !/^(serif|sans-serif|system-ui|monospace)$/.test(x)).map(x => `local("${x}")`);
+  const host = doc?.defaultView?.frameElement?.ownerDocument || doc;
+  for (const sheet of host?.styleSheets || []) {
+    let rules; try { rules = sheet.cssRules; } catch { continue; }
+    for (const rule of rules || []) {
+      if (rule.type === 5 && names.includes(rule.style.getPropertyValue("font-family").trim().replace(/^['"]|['"]$/g, ""))) {
+        sources.unshift(rule.style.getPropertyValue("src"));
+      }
+    }
+  }
+  if (!sources.length) return "";
+  return `@font-face{font-family:"QBR Latin";src:${sources.join(",")};unicode-range:U+0000-024F,U+1E00-1EFF,U+2000-206F;font-weight:100 900;font-style:normal;}`;
 }

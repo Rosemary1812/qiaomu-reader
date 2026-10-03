@@ -5,6 +5,7 @@ import test from "node:test";
 import { parse } from "acorn";
 import { JSDOM } from "jsdom";
 import { selectionActionPreferences } from "../src/selection-preferences.js";
+import { normalizeHighlightColor } from "../src/highlight-colors.js";
 import { highlightBacklink } from "../src/highlight-navigation.js";
 
 const source = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
@@ -67,6 +68,7 @@ function setup() {
     hlCommentQuoteBlock() {}, Notice: class {},
     copyToClipboard: async text => { copied.push(text); return true; },
     hlColorCss: color => color, QUICK_HL_COLOR_IDS: ["yellow", "green", "pink"],
+    normalizeHighlightColor,
     HL_COLORS: ["yellow", "green", "pink", "blue"].map(id => ({ id, label: () => id })),
   };
   const api = vm.runInNewContext(`${code}\n({${names.join(",")}})`, context);
@@ -120,7 +122,7 @@ test("recoloring an existing CFI keeps its ID and comment; undo restores the pre
   view._editHlId = "existing";
   api.applySelectionColor(view, "green");
   assert.equal(records.length, 1); assert.equal(records[0].id, "existing"); assert.equal(records[0].comment, "保留批注");
-  assert.equal(records[0].color, "green"); assert.equal(view.plugin.settings.defaultHlColor, "green");
+  assert.equal(records[0].color, "green"); assert.equal(view.plugin.settings.defaultHlColor, "yellow");
   view.contentEl.querySelector(".qiaomu-reader-selection-feedback button").click();
   assert.equal(records[0].color, "yellow"); f.close();
 });

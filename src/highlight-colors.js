@@ -9,3 +9,12 @@ export const HIGHLIGHT_PAINTS = Object.freeze({
 });
 export const HL_COLOR_SWATCHES = ["yellow", "green", "blue", "pink"]
   .map(id => [id, id, HIGHLIGHT_PAINTS[id]]);
+
+export function normalizeHighlightColor(value) {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : null;
+}
+export function highlightPaint(value) {
+  const hex = normalizeHighlightColor(value);
+  if (hex) return `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},.42)`;
+  return HIGHLIGHT_PAINTS[value] || HIGHLIGHT_PAINTS.yellow;
+}

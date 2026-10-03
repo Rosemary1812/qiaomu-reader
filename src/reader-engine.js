@@ -1,4 +1,4 @@
-import { HIGHLIGHT_PAINTS } from "./highlight-colors.js";
+import { highlightPaint } from "./highlight-colors.js";
 import { createBookCover, isGeneratedBookCover } from "./book-cover.js";
 export { HIGHLIGHT_PAINTS } from "./highlight-colors.js";
 // Qiaomu Reader — e-book rendering engine.
@@ -168,14 +168,14 @@ export class EpubEngine {
         });
         view.addEventListener("draw-annotation", (e) => {
             const { draw, annotation } = e.detail;
-            if (typeof annotation?.colorId === "string" && HIGHLIGHT_PAINTS[annotation.colorId])
+            if (typeof annotation?.colorId === "string")
                 draw((rects, options) => {
                     const shape = Overlayer.highlight(rects, options);
                     // Palette alpha already defines opacity. Foliate's extra
                     // 0.3 would make book colors differ from note highlights.
                     shape.style.removeProperty("opacity");
                     return shape;
-                }, { color: HIGHLIGHT_PAINTS[annotation.colorId] });
+                }, { color: highlightPaint(annotation.colorId) });
             else draw(Overlayer.outline);
         });
         view.addEventListener("show-annotation", (e) => {

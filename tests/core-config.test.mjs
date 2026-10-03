@@ -963,7 +963,7 @@ test("settings use task tabs, concise intros, and Chinese-first copy", () => {
   assert.match(source, /_aiThinkingRow\(host, s\)[\s\S]{0,260}"thinking-mode"/); // thinking toggle rides the shared _readingToggle builder via _aiThinkingRow
   assert.match(source, /this\._settingsDisclosure\(advanced, "ai-connection-settings"\)/);
   assert.match(source, /createEl\("details", \{ cls: "qiaomu-reader-settings-disclosure" \}\)/);
-  assert.match(source, /_readingDropdown\(host,\s*"body-font"/); // body-font row rides the shared dropdown builder in _groupAppearance
+  assert.match(source, /buildSplitFontSettings\(host, this\.plugin/); // body-font row rides the shared dropdown builder in _groupAppearance
   assert.match(source, /setName\(qiaomuReaderTranslate\("font-size-2"\)\)/);
   assert.match(source, /setName\(qiaomuReaderTranslate\("line-spacing-2"\)\)/);
   assert.match(source, /labels: \{ ru: "Georgia", en: "Georgia", zh: "Georgia" \}/);

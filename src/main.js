@@ -5,7 +5,7 @@ import { createStarterLibraryInstaller, findStarterBook } from "./starter-librar
 import { isNonChineseSource } from "./ai-source-language.js";
 import { createEnglishGlossLayer, englishGlossViewport, englishSelectionKind, loadEnglishDictionary, lookupEnglishWord, visibleEnglishWords } from "./english-reading.js";
 import { ankiInvoke, buildVocabRecord, ensureAnkiVocabModel, markVocabAnkiId, parseVocabNote, pushVocabToAnki, upsertVocabRecord, vocabContextGloss, vocabDeckName, vocabularyNotePath } from "./vocab.js";
-import { HL_COLOR_SWATCHES } from "./highlight-colors.js";
+import { HL_COLOR_SWATCHES, highlightPaint, normalizeHighlightColor } from "./highlight-colors.js";
 /*
  * Qiaomu Reader — source.
  *
@@ -49,7 +49,7 @@ import { translateUiText } from "./i18n-runtime.js";
 import { UI_LANGUAGES, normalizeUiLanguage, uiLanguageMetadata } from "./i18n-languages.js";
 import { READER_THEMES, READER_THEME_CHOICES, migrateReaderTheme } from "./reader-themes.js";
 import { FONT_FILE_ACCEPT, disposeReaderFonts, importedReaderFonts, listSystemFonts, readerFontStore } from "./reader-fonts.js";
-import { normalizeCustomFontFamily, resolveReaderFont, readerTextCss, syncPageButtons } from "./reader-appearance.js";
+import { normalizeCustomFontFamily, resolveReaderFont, readerTextCss, syncPageButtons, bookFontSettings, splitReaderFontCss } from "./reader-appearance.js";
 import { BUNDLED_FONT_FAMILIES, ensureBundledReaderFont } from "./bundled-fonts.js";
 import { OPENDYSLEXIC_READER_FONT } from "./opendyslexic-reader-font.js";
 import { cloneJson, createSerialTaskQueue, isPlainRecord, mergeReadingProgress, readJsonRecordStore, writeVerifiedJsonRecord } from "./storage.js";
@@ -299,6 +299,14 @@ const FONTS = Object.fromEntries(Object.values(READER_FONTS).map((font) => [font
 function qiaomuReaderReaderFonts() { return Object.values(READER_FONTS); }
 function qiaomuReaderFontLabel(font) { return font.labels[qiaomuReaderLanguage] || qiaomuReaderTranslate(font.labels.ru); }
 async function ensureSelectedReaderFont(doc, plugin, settings = plugin.settings) {
+  const loaded = await ensureBaseReaderFont(doc, plugin, settings);
+  await ensureBundledReaderFont(doc, settings.englishFontFamily);
+  let style = doc.querySelector('style[data-qbr-split-font]');
+  if (!style) { style = doc.createElement("style"); style.setAttribute("data-qbr-split-font", ""); (doc.head || doc.documentElement).append(style); }
+  style.textContent = splitReaderFontCss(settings, FONTS, doc);
+  return loaded;
+}
+async function ensureBaseReaderFont(doc, plugin, settings = plugin.settings) {
   if (settings.fontFamily !== "custom" || !settings.customFontId) {
     return ensureBundledReaderFont(doc, settings.fontFamily);
   }
@@ -461,10 +469,8 @@ function buildPageButtonsSetting(host, plugin) {
 // names in Russian even when the rest of the interface later switches to
 // Chinese or English.
 const HL_COLORS = HL_COLOR_SWATCHES.map(([id, name, css]) => ({ id, label: () => qiaomuReaderTranslate(name), css }));
-function hlColorCss(colorId) {
-  const swatch = HL_COLORS.find((entry) => entry.id === colorId) || HL_COLORS[0];
-  return swatch.css;
-}
+function hlColorCss(colorId) { return highlightPaint(colorId); }
+
 function qiaomuReaderPath(p) {
   const trimmed = String(p == null ? "" : p).trim();
   if (!trimmed) return "";
@@ -475,7 +481,7 @@ function qiaomuReaderPath(p) {
     return trimmed.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\/+|\/+$/g, "");
   }
 }
-const DEVICE_KEYS = ["theme", "fontSize", "fontFamily", "customFontFamily", "customFontId", "pageButtonsVisibility", "lineHeight", "columns", "textAlign", "vAlign", "einkMode"];
+const DEVICE_KEYS = ["theme", "fontSize", "fontFamily", "englishFontFamily", "customFontFamily", "customFontId", "pageButtonsVisibility", "lineHeight", "columns", "textAlign", "vAlign", "einkMode"];
 function qiaomuReaderDeviceKey() {
   let key = "desktop";
   try {
@@ -1284,7 +1290,7 @@ function buildBookSettings(view, p) {
 
   // Reset every per-book override; the setup prompt reappears on next open.
   const resetRow = p.createDiv("qiaomu-reader-pan-hint");
-  const resetLink = resetRow.createSpan({ text: qiaomuReaderTranslate("forget-this-book-s-settings") });
+  const resetLink = resetRow.createEl("button", { text: qiaomuReaderTranslate("forget-this-book-s-settings"), attr: { type: "button" } });
   resetLink.addClass("qiaomu-reader-inline-link");
   resetLink.addEventListener("click", async () => {
     for (const key of ["bookNoteLinks", "bookNotePrompted", "bookTags", "bookTemplates"]) {
@@ -1322,7 +1328,7 @@ function buildBookSettings(view, p) {
   }
 
   function appendPick(wrap, cls, labelKey, onClick) {
-    const el = wrap.createDiv("qiaomu-reader-booknote-pick");
+    const el = wrap.createEl("button", { cls: "qiaomu-reader-booknote-pick", attr: { type: "button" } });
     el.setText(qiaomuReaderTranslate(labelKey));
     el.addClass(cls);
     el.addEventListener("click", onClick);
@@ -1346,7 +1352,7 @@ function buildBookSettings(view, p) {
   const actions = linkRow.wrap.createDiv("qiaomu-reader-booknote-actions");
   actions.addClass("qiaomu-reader-panel-actions");
 
-  const createLink = actions.createDiv("qiaomu-reader-booknote-pick");
+  const createLink = actions.createEl("button", { cls: "qiaomu-reader-booknote-pick", attr: { type: "button" } });
   createLink.setText(qiaomuReaderTranslate("create-new"));
   createLink.addClass("qiaomu-reader-panel-link-strong");
   createLink.addEventListener("click", async () => {
@@ -1357,7 +1363,7 @@ function buildBookSettings(view, p) {
     new Notice(qiaomuReaderTranslate("book-note-created-0", note.basename));
   });
 
-  const chooseLink = actions.createDiv("qiaomu-reader-booknote-pick");
+  const chooseLink = actions.createEl("button", { cls: "qiaomu-reader-booknote-pick", attr: { type: "button" } });
   chooseLink.setText(qiaomuReaderTranslate("choose-from-the-list"));
   chooseLink.addClass("qiaomu-reader-panel-link");
   chooseLink.addEventListener("click", () => {
@@ -1419,6 +1425,7 @@ function buildBookSettings(view, p) {
       new Notice(qiaomuReaderTranslate("book-template-0", chosen.basename));
     }).open();
   });
+  p.appendChild(resetRow);
 }
 
 function panelSection(view, p, { label, emoji, settingKey, defaultOpen = false }) {
@@ -1444,7 +1451,32 @@ function panelSection(view, p, { label, emoji, settingKey, defaultOpen = false }
   });
   return body;
 }
-function buildReaderExtraSettings(view, p, showPageButtons = true) {
+function buildSplitFontSettings(host, plugin, apply, path) {
+  const s = plugin.settings;
+  const fonts = host.createDiv("qiaomu-reader-split-font-settings");
+  const draw = () => {
+    fonts.empty();
+    const effective = bookFontSettings(s, path);
+    if (path) new Setting(fonts).setName(englishReadingLabel("仅对本书设置", "Use fonts for this book"))
+      .addToggle(t => t.setValue(!!s.bookFonts?.[path]).onChange(async value => {
+        s.bookFonts ||= {};
+        if (value) s.bookFonts[path] = { fontFamily: s.fontFamily, englishFontFamily: s.englishFontFamily || s.fontFamily };
+        else delete s.bookFonts[path];
+        await plugin.saveAll(); await apply(); draw();
+      }));
+    const target = path && s.bookFonts?.[path] || s;
+    for (const [key, label] of [["fontFamily", englishReadingLabel("中文字体", "Chinese font")], ["englishFontFamily", englishReadingLabel("英文字体", "English font")]]) {
+      new Setting(fonts).setName(label).addDropdown(d => {
+        for (const font of qiaomuReaderReaderFonts()) if (key === "fontFamily" || font.id !== "custom") d.addOption(font.id, qiaomuReaderFontLabel(font));
+        d.setValue(effective[key] || s.fontFamily).onChange(async value => { if (key === "fontFamily" && !target.englishFontFamily) target.englishFontFamily = target.fontFamily === "custom" ? "georgia" : target.fontFamily; target[key] = value; await plugin.saveAll(); await apply(); draw(); });
+      });
+    }
+    if (target === s) buildCustomFontInput(fonts, plugin, apply);
+  };
+  draw();
+}
+
+function buildReaderExtraSettings(view, p, showPageButtons = true, includeBook = true) {
   const s = view.plugin.settings;
   const section = (label) => p.createDiv("qiaomu-reader-pan-sec").setText(qiaomuReaderTranslate(label));
   const hint = (label, ...args) => p.createDiv("qiaomu-reader-pan-hint").setText(qiaomuReaderTranslate(label, ...args));
@@ -1456,13 +1488,14 @@ function buildReaderExtraSettings(view, p, showPageButtons = true) {
     const row = p.createDiv("qiaomu-reader-col-row");
     const clearActive = () => row.querySelectorAll(".qiaomu-reader-col-btn").forEach((b) => b.removeClass("active"));
     for (const [value, textKey] of choices) {
-      const btn = row.createDiv("qiaomu-reader-col-btn");
+      const btn = row.createEl("button", { cls: "qiaomu-reader-col-btn", attr: { type: "button", "aria-pressed": String((s[key] ?? fallback) === value) } });
       btn.setText(qiaomuReaderTranslate(textKey));
       if ((s[key] ?? fallback) === value) btn.addClass("active");
       btn.addEventListener("click", async () => {
         s[key] = value;
         await persist();
         clearActive();
+        row.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
         btn.addClass("active");
         apply?.(value);
       });
@@ -1492,7 +1525,7 @@ function buildReaderExtraSettings(view, p, showPageButtons = true) {
 
   }
 
-  buildBookSettings(view, p);
+  if (includeBook) buildBookSettings(view, p);
 }
 
 // Shared body of the in-book reading-settings panel: ReaderView.buildSettPanel
@@ -2084,15 +2117,21 @@ const QiaomuBookReader = class extends Plugin {
     void Promise.allSettled(pending);
   }
   async openFile(file) {
+    const markOpened = () => {
+      this.settings.bookLastOpened = { ...this.settings.bookLastOpened, [file.path]: Date.now() };
+      void this._saveLocalData();
+    };
     if (this.app.isMobile) {
       const modal = new ReaderModal(this.app, this, file);
       modal.open();
+      markOpened();
       return modal;
     }
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
     const leaf = leaves.find((item) => item.view.file?.path === file.path) || leaves[0] || this.app.workspace.getLeaf("tab");
     await leaf.setViewState({ type: VIEW_TYPE, state: { path: file.path }, active: true });
     await this.app.workspace.revealLeaf(leaf);
+    markOpened();
     void this._showCompanionForBook(leaf.view);
     return leaf.view;
   }
@@ -4305,7 +4344,12 @@ function showPdfZoomMenu(view, event) {
   menu.showAtMouseEvent(event);
 }
 class PdfZoomModal extends Modal {
-  constructor(app, view) { super(app); this.view = view; }
+  constructor(app, view) {
+    super(app); this.view = view;
+    this.bookPath = view.file?.path;
+    this.pendingSelection = view._pendingSel;
+    this.highlightId = view._editHlId;
+  }
   onOpen() {
     this.setTitle(qiaomuReaderTranslate("custom-pdf-zoom"));
     const input = this.contentEl.createEl("input", { type: "number", attr: { min: String(PDF_ZOOM_MIN * 100), max: String(PDF_ZOOM_MAX * 100), step: "5", "aria-label": qiaomuReaderTranslate("zoom-percentage") } });
@@ -5585,7 +5629,7 @@ function applySelectionColor(view, colorId) {
     const id = view._createHighlight(part, colorId);
     if (id) ids.push(id);
   }
-  view.plugin.settings.defaultHlColor = colorId;
+  if (!view._editHlId) view.plugin.settings.defaultHlColor = colorId;
   void view.plugin.saveAll();
   repaintSelectionHighlights(view);
   clearReaderSelection(view); view._hideHlPopup();
@@ -5628,6 +5672,16 @@ function toggleSelectionColorDropdown(view) {
     button.addEventListener("click", () => view._applyPopupColor(color.id));
     buttons.push(button);
   }
+  for (const hex of (view.plugin.settings.recentHighlightColors || []).filter(normalizeHighlightColor).slice(0, 6)) {
+    const button = menu.createEl("button", { cls: "qiaomu-reader-color-option", text: hex, attr: { type: "button" } });
+    button.style.borderBottom = `4px solid ${hex}`;
+    button.addEventListener("click", () => view._applyPopupColor(hex));
+  }
+  const custom = menu.createEl("button", { cls: "qiaomu-reader-custom-color-open", text: englishReadingLabel("自定义颜色…", "Custom color…"), attr: { type: "button" } });
+  custom.addEventListener("click", () => {
+    closeSelectionColorDropdown(view);
+    new HighlightColorModal(view.app, view).open();
+  });
   const box = pop.getBoundingClientRect(), root = view.contentEl.getBoundingClientRect();
   const width = menu.offsetWidth;
   menu.style.left = `${Math.max(0, Math.min(trigger.offsetLeft, root.right - box.left - width - 8))}px`;
@@ -5643,6 +5697,42 @@ function toggleSelectionColorDropdown(view) {
     }
   });
   (buttons.find(b => b.getAttribute("aria-checked") === "true") || buttons[0]).focus({ preventScroll: true });
+}
+class HighlightColorModal extends Modal {
+  constructor(app, view) { super(app); this.view = view; }
+  onOpen() {
+    this.setTitle(englishReadingLabel("划线颜色", "Highlight color"));
+    const c = this.contentEl; c.addClass("qiaomu-reader-custom-color");
+    const preview = c.createDiv({ cls: "qiaomu-reader-custom-color-preview", text: englishReadingLabel("阅读，让想法留下痕迹。", "Reading leaves a trace of thought.") });
+    const initial = normalizeHighlightColor(selectionColor(this.view)) || "#ffce40";
+    const pickerLabel = c.createEl("label", { text: englishReadingLabel("选择颜色", "Choose color") });
+    const picker = pickerLabel.createEl("input", { attr: { type: "color", value: initial } });
+    const hexLabel = c.createEl("label", { text: englishReadingLabel("颜色值", "Hex color") });
+    const hex = hexLabel.createEl("input", { attr: { type: "text", value: initial, maxlength: "7" } });
+    const error = c.createDiv({ attr: { role: "alert" } });
+    new Setting(c).setName(englishReadingLabel("设为默认颜色", "Use as default"))
+      .addToggle(t => t.setValue(false).onChange(value => { this.makeDefault = value; }));
+    const update = value => { preview.style.background = highlightPaint(value); picker.value = value; hex.value = value; };
+    picker.addEventListener("input", () => update(picker.value));
+    hex.addEventListener("input", () => { const value = normalizeHighlightColor(hex.value); if (value) { picker.value = value; preview.style.background = highlightPaint(value); } });
+    update(initial);
+    const actions = c.createDiv("qiaomu-reader-book-tags-actions");
+    actions.createEl("button", { text: qiaomuReaderTranslate("cancel") }).addEventListener("click", () => this.close());
+    actions.createEl("button", { cls: "mod-cta", text: englishReadingLabel("应用", "Apply") }).addEventListener("click", () => {
+      const color = normalizeHighlightColor(hex.value);
+      if (!color) { error.setText(englishReadingLabel("请输入 #RRGGBB 格式的颜色。", "Enter a color in #RRGGBB format.")); return; }
+      if (this.view.file?.path !== this.bookPath) { this.close(); return; }
+      this.view._pendingSel = this.pendingSelection;
+      this.view._editHlId = this.highlightId;
+      const s = this.view.plugin.settings;
+      const previousDefault = s.defaultHlColor;
+      this.view._applyPopupColor(color);
+      if (this.makeDefault) s.defaultHlColor = color;
+      else s.defaultHlColor = previousDefault;
+      s.recentHighlightColors = [color, ...(s.recentHighlightColors || []).filter(x => x !== color)].slice(0, 6);
+      void this.view.plugin.saveAll(); this.close();
+    });
+  }
 }
 function syncSelectionToolbar(view) {
   const config = JSON.stringify([view.plugin.settings.selectionShowLabels, view.plugin.settings.selectionActions, view.plugin.settings.translateEnabled]);
@@ -7586,10 +7676,16 @@ function buildTocPanelFor(view, panel, { close, jump: openItem }) {
   panel.onkeydown = (event) => {
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); view.tocBtn?.focus(); }
   };
+  const heading = panel.querySelector(".qiaomu-reader-pan-title");
+  const done = heading.createEl("button", { cls: "qiaomu-reader-panel-close", attr: { type: "button" } });
+  const closeLabel = done.createSpan({ cls: "qiaomu-reader-visually-hidden", text: qiaomuReaderTranslate("close") });
+  closeLabel.id = `qbr-toc-close-${Date.now()}`;
+  done.setAttribute("aria-labelledby", closeLabel.id);
+  svgIcon(done, "x");
+  done.addEventListener("click", () => { close(); view.tocBtn?.focus(); });
   const marks = panel.createDiv("qiaomu-reader-find-controls");
   marks.createEl("button", { text: qiaomuReaderTranslate("bookmark-this-location") }).addEventListener("click", () => { close(); addLocationMark(view); });
   marks.createEl("button", { text: qiaomuReaderTranslate("location-bookmarks") }).addEventListener("click", () => { close(); showLocationMarks(view); });
-  marks.createEl("button", { text: qiaomuReaderTranslate("close") }).addEventListener("click", () => { close(); view.tocBtn?.focus(); });
   const entries = view.tocItems || [];
   if (!entries.length) {
     panel.createDiv("qiaomu-reader-toc-empty").setText(qiaomuReaderTranslate("no-contents-and-no-headings-were-found-in-this-book"));
@@ -7605,6 +7701,7 @@ function buildTocPanelFor(view, panel, { close, jump: openItem }) {
       redraw();
     });
   }
+  panel.appendChild(marks);
   const list = panel.createDiv("qiaomu-reader-toc-list");
   const redraw = () => {
     list.empty();
@@ -7621,7 +7718,7 @@ function buildTocPanelFor(view, panel, { close, jump: openItem }) {
       const spread = !view.engine && view.pager && view.pager.spreadForBlock ? view.pager.spreadForBlock(entry.block) : null;
       const meta = [];
       if (entry.page) meta.push(qiaomuReaderTranslate("p-0", entry.page));
-      if (typeof spread === "number") meta.push(qiaomuReaderTranslate("spr-0", spread + 1));
+      if (!entry.page && typeof spread === "number") meta.push(qiaomuReaderTranslate("spr-0", spread + 1));
       if (meta.length) row.createSpan({ cls: "qiaomu-reader-toc-where", text: meta.join(" \xB7 ") });
       if (entry.level) node.style.paddingLeft = `${8 + entry.level * 12}px`;
       if (index === current) {
@@ -8616,7 +8713,7 @@ const ReadSettingsModal = class extends Modal {
   _paintPreview() {
     const p = this.previewEl;
     if (!p) return;
-    const s = this.view.plugin.settings;
+    const s = bookFontSettings(this.view.plugin.settings, this.view.file?.path);
     const t = qiaomuReaderTheme(s);
     void ensureSelectedReaderFont(docOf(p), this.view.plugin, s);
     p.style.fontFamily = resolveReaderFont(s, FONTS);
@@ -8677,11 +8774,10 @@ const ReadSettingsModal = class extends Modal {
           .setButtonText(qiaomuReaderTranslate("change-service"))
           .onClick(() => openPluginAiSettings(this.app, plugin, () => this._draw())));
       status.settingEl.addClass("qiaomu-reader-ai-status-row");
-      const badge = status.nameEl.createSpan({
+      status.nameEl.createSpan({
         cls: `qiaomu-reader-ai-status-badge ${state.enabled ? "is-ready" : "is-off"}`,
-        text: state.enabled ? qiaomuReaderTranslate("ready") : qiaomuReaderTranslate("off-2"),
+        text: state.enabled ? englishReadingLabel("已启用", "Enabled") : qiaomuReaderTranslate("off-2"),
       });
-      badge.setAttr("aria-label", state.enabled ? qiaomuReaderTranslate("ready") : qiaomuReaderTranslate("off-2"));
       new Setting(section)
         .setName(qiaomuReaderTranslate("enable-ai-assistance"))
         .setDesc(qiaomuReaderTranslate("ai-entry-setting-description"))
@@ -8801,14 +8897,14 @@ const ReadSettingsModal = class extends Modal {
   _mountPreview(body, view) {
     this.previewEl = body.createDiv("qiaomu-reader-rs-preview");
     this.previewEl.hidden = readerIsPdf(view);
-    this.previewEl.setText(qiaomuReaderTranslate("reading-is-not-about-remembering-everything-but-about-finding-id"));
+    this.previewEl.setText(qiaomuReaderTranslate("reading-is-not-about-remembering-everything-but-about-finding-id") + "\nReading leaves a trace of thought.");
     const repaint = () => this._paintPreview();
     repaint();
     body.addEventListener("click", () => window.setTimeout(repaint, 80), true);
   }
   _themeCard(body, settings) {
     const card = body.createDiv("qiaomu-reader-rs-card qiaomu-reader-rs-theme-card");
-    this._seg(
+    const themes = this._seg(
       card,
       qiaomuReaderTranslate("theme"),
       READER_THEME_CHOICES.map((id) => [id, readerThemeLabel(id)]),
@@ -8817,6 +8913,14 @@ const ReadSettingsModal = class extends Modal {
         setReaderTheme(settings, theme); await this._apply(false);
       }
     );
+    themes.querySelectorAll("button").forEach((button, index) => {
+      const theme = READER_THEMES[READER_THEME_CHOICES[index]];
+      const swatch = button.createSpan({ cls: "qiaomu-reader-rs-theme-swatch", attr: { "aria-hidden": "true" } });
+      swatch.style.background = theme.bg;
+      swatch.style.color = theme.text;
+      swatch.setText("Aa");
+      button.prepend(swatch);
+    });
   }
   _fillTypography(colA, view, settings) {
     colA.createDiv("qiaomu-reader-rs-h").setText(qiaomuReaderTranslate("text-and-font"));
@@ -8839,13 +8943,7 @@ const ReadSettingsModal = class extends Modal {
     };
     szMinus.addEventListener("click", () => bumpSize(-1));
     szPlus.addEventListener("click", () => bumpSize(1));
-    new Setting(colA).setName(qiaomuReaderTranslate("font")).addDropdown(dropdown => {
-      for (const font of qiaomuReaderReaderFonts()) dropdown.addOption(font.id, qiaomuReaderFontLabel(font));
-      dropdown.setValue(settings.fontFamily).onChange(async font => {
-        settings.fontFamily = font; refreshCustomFont(); await this._apply(true);
-      });
-    });
-    const refreshCustomFont = buildCustomFontInput(colA, view.plugin, () => this._apply(true));
+    buildSplitFontSettings(colA, view.plugin, () => this._apply(true), view.file?.path);
     const lineHead = colA.createDiv("qiaomu-reader-rs-range-head");
     lineHead.createSpan({ text: qiaomuReaderTranslate("line-spacing") });
     const lineValue = lineHead.createSpan({ cls: "qiaomu-reader-rs-range-value" });
@@ -8929,8 +9027,11 @@ const ReadSettingsModal = class extends Modal {
       emoji: "",
       settingKey: "readerAdvOpen"
     });
-    buildReaderExtraSettings(view, moreBody, false);
+    buildReaderExtraSettings(view, moreBody, false, false);
     buildPageButtonsSetting(moreBody, view.plugin);
+    const book = body.createDiv("qiaomu-reader-rs-card qiaomu-reader-rs-book-card");
+    book.createDiv("qiaomu-reader-rs-h").setText(englishReadingLabel("本书信息", "Book details"));
+    buildBookSettings(view, book);
   }
 
   onClose() {
@@ -9360,9 +9461,8 @@ function _escHtml(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 function hlMark(app, text, colorId) {
-  const c = HL_COLORS.find((x) => x.id === colorId);
-  if (!c || _readerSettings(app).exportColors === false) return text;
-  return `<mark style="background:${c.css}">${_escHtml(text)}</mark>`;
+  if (_readerSettings(app).exportColors === false) return text;
+  return `<mark style="background:${highlightPaint(colorId)}">${_escHtml(text)}</mark>`;
 }
 function normalizeHlText(s) {
   return String(s || "").replace(/<[^>]*>/g, " ").replace(/==+/g, " ").replace(/^\s*>+\s?/gm, " ").replace(/\s+/g, " ").trim().toLowerCase();
@@ -10671,7 +10771,7 @@ const ReaderView = class extends ItemView {
         attachEngineChrome(this, doc, index);
         // Each section lives in an iframe the page stylesheet cannot reach:
         // load the selected reading font into it directly.
-        try { void ensureSelectedReaderFont(doc, plugin, plugin.settings); }
+        try { void ensureSelectedReaderFont(doc, plugin, bookFontSettings(plugin.settings, file.path)); }
         catch (e) { console.warn("Qiaomu Reader: could not load the reading font into a book document", e); }
         // Selections live inside the iframe too; forward them so the highlight
         // popup works for engine formats.
@@ -10761,9 +10861,9 @@ const ReaderView = class extends ItemView {
   _engineAppearanceCss() {
     // The engine renders each section inside its own iframe document, so the
     // reader's typography and theme travel into that document explicitly.
-    const s = this.plugin.settings;
+    const s = bookFontSettings(this.plugin.settings, this.file?.path);
     const t = qiaomuReaderTheme(s);
-    return readerTextCss(s, t, resolveReaderFont(s, FONTS), this.contentEl)
+    return splitReaderFontCss(s, FONTS, docOf(this.contentEl)) + readerTextCss(s, t, resolveReaderFont(s, FONTS), this.contentEl)
       + (this.file?.extension === "epub" && s.englishGlossEnabled ? "body p,body li,body blockquote{line-height:2.1!important}" : "");
   }
   _maybePromptBookNote(file) { // first open of a book: auto-link or ask once
@@ -10814,7 +10914,7 @@ const ReaderView = class extends ItemView {
     if (readerPaginationMappingCollapsed(pager)) {
       await new Promise((resolve) => window.setTimeout(resolve, 180));
       if (!current()) return;
-      [, total] = await pager.build(this.areaEl, this.bookHtml, this.plugin.settings, 0);
+      [, total] = await pager.build(this.areaEl, this.bookHtml, bookFontSettings(this.plugin.settings, this.file?.path), 0);
       if (!current()) return;
     }
     this._laidOutWidth = pager.builtWidth || w;
@@ -10907,7 +11007,7 @@ const ReaderView = class extends ItemView {
     try {
       await waitForReaderFrame(docOf(this.areaEl).defaultView);
       this.areaEl.empty(); const pager = this.pager;
-      await pager.build(this.areaEl, this.bookHtml, this.plugin.settings, 0);
+      await pager.build(this.areaEl, this.bookHtml, bookFontSettings(this.plugin.settings, this.file?.path), 0);
       if (pager !== this.pager || !this.bookHtml || this._closed) return;
       this._recordLaidOutWidth();
       this._renderFlowHighlights(); // re-wrap markers on the fresh blocks
@@ -11024,7 +11124,7 @@ const ReaderView = class extends ItemView {
       layout?.catch?.(error => console.warn("Qiaomu Reader: could not change EPUB reading mode", error));
       this.engine.setExtraCss(this._engineAppearanceCss());
       try {
-        for (const { doc } of this.engine.contents()) void ensureSelectedReaderFont(doc, this.plugin, this.plugin.settings);
+        for (const { doc } of this.engine.contents()) void ensureSelectedReaderFont(doc, this.plugin, bookFontSettings(this.plugin.settings, this.file?.path));
       } catch (e) { console.warn("Qiaomu Reader: could not refresh the engine font", e); }
       return layout;
     }
@@ -11750,10 +11850,6 @@ const LibraryModal = class extends Modal {
         grid.createDiv("qiaomu-reader-lib-noresult").setText(qiaomuReaderTranslate(libraryEmptyCopyKey(this._libSelected, query)));
         return;
       }
-      if (this._libSelected === "all" && !query.trim()) {
-        const recent = files.find(f => bookStatusOf(progressOf(f.path)) === "reading");
-        if (recent) this._buildLibResume(grid, recent);
-      }
       const renderBook = this._libLayout === "list" ? this.renderRow : this.renderCard;
       shown.forEach((f) => renderBook.call(this, grid, f));
     };
@@ -11966,7 +12062,7 @@ const LibraryModal = class extends Modal {
     return this.app.vault.getFiles().filter((f) => BOOK_EXTENSIONS.has(f.extension) && (prefix === "" || f.path.startsWith(prefix)));
   }
   _sortLibBooks(bookFiles) {
-    const lastRead = (p) => this.plugin.getProgress(p)?.lastRead ?? 0;
+    const lastRead = (p) => Math.max(this.plugin.settings.bookLastOpened?.[p] || 0, this.plugin.getProgress(p)?.lastRead || 0);
     bookFiles.sort((a, b) => {
       const pa = lastRead(a.path), pb = lastRead(b.path);
       if (pb !== pa) return pb - pa;
@@ -12151,17 +12247,6 @@ const LibraryModal = class extends Modal {
     this.contentEl.empty();
     this.onOpen();
   }
-  _buildLibResume(host, file) {
-    const row = host.createDiv("qiaomu-reader-lib-resume");
-    const text = row.createDiv("qiaomu-reader-lib-resume-copy");
-    text.createDiv({ cls: "qiaomu-reader-lib-resume-label", text: qiaomuReaderTranslate("library-continue") });
-    text.createDiv({ cls: "qiaomu-reader-lib-resume-title", text: file.basename });
-    const excerpt = this.plugin.getHighlights(file.path).filter(h => h.text).at(-1);
-    if (excerpt) text.createDiv({ cls: "qiaomu-reader-lib-resume-quote", text: excerpt.text });
-    const button = row.createEl("button", { cls: "qiaomu-reader-lib-resume-button", text: qiaomuReaderTranslate("library-continue") });
-    svgIcon(button.createSpan(), "arrow-right");
-    button.addEventListener("click", () => { this.close(); void this.plugin.openFile(file); });
-  }
   async _openLibHighlights(file) {
     const request = this._highlightOpenRequest = {};
     this.close();
@@ -12300,7 +12385,6 @@ const LibraryModal = class extends Modal {
     this._libMeta(row.createDiv("qiaomu-reader-lib-row-copy"), file, prog, pct, noteCount);
     const actions = row.createDiv("qiaomu-reader-lib-row-actions");
     const openBook = () => { this.close(); void this.plugin.openFile(file); };
-    this._libAction(actions, qiaomuReaderTranslate("library-continue"), "book-open", openBook);
     if (noteCount > 0) this._libAction(actions, qiaomuReaderTranslate("library-view-notes"), "reading-note", () => { void this._openLibHighlights(file); });
     const bookMenu = this._libCardMenu(file);
     this._libMenuButton(actions, bookMenu);
@@ -12669,7 +12753,7 @@ const ReaderModal = class extends Modal {
   async _repaginateAnchored(anchor) {
     this.areaEl.addClass("qiaomu-reader-booting");
     qiaomuReaderShowVeil(this);
-    await this.pager.build(this.areaEl, this.bookHtml, this.plugin.settings, 0);
+    await this.pager.build(this.areaEl, this.bookHtml, bookFontSettings(this.plugin.settings, this.file?.path), 0);
     this._renderFlowHighlights();
     const [cur, tot] = restoreReadingAnchor(this.pager, anchor);
     restoreAiSource(this);
@@ -12765,12 +12849,12 @@ const ReaderModal = class extends Modal {
     qiaomuReaderMarkSlowLayout(this);
     await qiaomuReaderPaintVeil(this);
     if (!this._loadCoordinator.isCurrent(loadToken)) return false;
-    await this.pager.build(this.areaEl, this.bookHtml, this.plugin.settings, 0);
+    await this.pager.build(this.areaEl, this.bookHtml, bookFontSettings(this.plugin.settings, this.file?.path), 0);
     if (!this._loadCoordinator.isCurrent(loadToken)) return false;
     if (readerPaginationMappingCollapsed(this.pager)) {
       await new Promise((resolve) => window.setTimeout(resolve, 180));
       if (!this._loadCoordinator.isCurrent(loadToken)) return false;
-      await this.pager.build(this.areaEl, this.bookHtml, this.plugin.settings, 0);
+      await this.pager.build(this.areaEl, this.bookHtml, bookFontSettings(this.plugin.settings, this.file?.path), 0);
       if (!this._loadCoordinator.isCurrent(loadToken)) return false;
     }
     const hasBlock = saved && typeof saved.block === "number" && saved.block >= 0;
@@ -12887,7 +12971,7 @@ const ReaderModal = class extends Modal {
       onHighlightClick: (hit) => openEngineHighlightPopup(this, hit),
       onDocLoaded: ({ doc, index }) => {
         attachEngineChrome(this, doc, index);
-        try { void ensureSelectedReaderFont(doc, plugin, plugin.settings); }
+        try { void ensureSelectedReaderFont(doc, plugin, bookFontSettings(plugin.settings, file.path)); }
         catch (e) { console.warn("Qiaomu Reader: could not load the reading font into a book document", e); }
         try {
           const notify = () => {
@@ -12926,9 +13010,9 @@ const ReaderModal = class extends Modal {
     return out;
   }
   _engineAppearanceCss() {
-    const s = this.plugin.settings;
+    const s = bookFontSettings(this.plugin.settings, this.file?.path);
     const t = qiaomuReaderTheme(s);
-    return readerTextCss(s, t, resolveReaderFont(s, FONTS), this.contentEl)
+    return splitReaderFontCss(s, FONTS, docOf(this.contentEl)) + readerTextCss(s, t, resolveReaderFont(s, FONTS), this.contentEl)
       + (this.file?.extension === "epub" && s.englishGlossEnabled ? "body p,body li,body blockquote{line-height:2.1!important}" : "");
   }
   _engineSelectionCheck({ doc, index }) {
@@ -14255,17 +14339,7 @@ const SettingsTab = class extends PluginSettingTab {
         setReaderTheme(s, id);
         await applyAppearance(false);
       });
-    this._readingDropdown(host,
-      "body-font",
-      "used-for-the-book-text-chinese-and-english-font-names-keep-their",
-      qiaomuReaderReaderFonts().map((font) => [font.id, qiaomuReaderFontLabel(font)]),
-      s.fontFamily || "georgia",
-      async (font) => {
-        s.fontFamily = font;
-        refreshCustomFont();
-        await applyAppearance(true);
-      });
-    const refreshCustomFont = buildCustomFontInput(host, this.plugin, () => applyAppearance(true));
+    buildSplitFontSettings(host, this.plugin, () => applyAppearance(true));
     new Setting(host)
       .setName(qiaomuReaderTranslate("font-size-2"))
       .setDesc(qiaomuReaderTranslate("the-book-text-size-synced-with-the-in-reader-control"))
@@ -14384,9 +14458,12 @@ const SettingsTab = class extends PluginSettingTab {
         .setDesc(tx("the-title-is-chosen-automatically-the-passage-s-first-sentence-o")), "shortNoteTitles", true);
     }
     c.createEl("h3", { text: tx("quotes-and-highlights") });
+    const highlightChoices = HL_COLORS.map((col) => [col.id, col.label()]);
+    const customDefault = normalizeHighlightColor(settings.defaultHlColor);
+    if (customDefault) highlightChoices.push([customDefault, englishReadingLabel(`自定义 ${customDefault}`, `Custom ${customDefault}`)]);
     choose(new Setting(c)
       .setName(tx("default-highlight-colour"))
-      .setDesc(tx("which-colour-to-use-when-you-comment-on-a-passage-without-pickin")), HL_COLORS.map((col) => [col.id, col.label()]), settings.defaultHlColor || HL_COLORS[0].id, (v) => persist("defaultHlColor", v));
+      .setDesc(tx("which-colour-to-use-when-you-comment-on-a-passage-without-pickin")), highlightChoices, settings.defaultHlColor || HL_COLORS[0].id, (v) => persist("defaultHlColor", v));
     const quoteOptions = this._settingsDisclosure(c, "ai-note-format-options");
     const quoteFmt = new Setting(quoteOptions)
       .setName(tx("shape-of-a-copied-quote"))
