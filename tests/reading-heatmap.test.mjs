@@ -6,36 +6,34 @@ import {
   mountReadingHeatmap, pruneReadingLog, shiftDayKey,
 } from "../src/reading-heatmap.js";
 
-const GOAL = 15 * 60;
-
 function weekday(dayKey) {
   return new Date(`${dayKey}T12:00:00Z`).getUTCDay();
 }
 
-test("heat levels follow the daily goal and ignore every other day", () => {
+test("heat levels use fixed reading durations and ignore every other day", () => {
   assert.equal(HEATMAP_WEEKS, 52);
   assert.equal(READING_LOG_HORIZON_DAYS, 400);
-  assert.equal(heatLevel(0, GOAL), 0);
-  assert.equal(heatLevel(1, GOAL), 1);
-  assert.equal(heatLevel(299, GOAL), 1);
-  assert.equal(heatLevel(300, GOAL), 2);
-  assert.equal(heatLevel(899, GOAL), 2);
-  assert.equal(heatLevel(900, GOAL), 3);
-  assert.equal(heatLevel(5000, GOAL), 3);
+  assert.equal(heatLevel(0), 0);
+  assert.equal(heatLevel(1), 1);
+  assert.equal(heatLevel(299), 1);
+  assert.equal(heatLevel(300), 2);
+  assert.equal(heatLevel(1799), 2);
+  assert.equal(heatLevel(1800), 3);
+  assert.equal(heatLevel(5000), 3);
   const washed = buildReadingHeatmap({
     "2024-01-01": 4 * 60,
     "2024-01-02": 5 * 3600,
     "2024-01-03": 20 * 60,
-  }, "2024-01-03", GOAL);
+  }, "2024-01-03");
   const week = washed.columns[washed.columns.length - 1].days;
   assert.equal(week[0].level, 1);
   assert.equal(week[1].level, 3);
-  assert.equal(week[2].level, 3);
+  assert.equal(week[2].level, 2);
 });
 
 test("the grid is Monday weeks, ends on the current week, and hides future days", () => {
   const todayKey = "2024-01-03";
-  const model = buildReadingHeatmap({}, todayKey, GOAL);
+  const model = buildReadingHeatmap({}, todayKey);
   assert.equal(model.columns.length, 52);
   assert.equal(model.active, false);
   for (const column of model.columns) {
@@ -50,16 +48,16 @@ test("the grid is Monday weeks, ends on the current week, and hides future days"
   assert.equal(model.today.column, 51);
   assert.equal(model.today.row, 2);
   assert.equal(model.columns[0].days[0].key, shiftDayKey(last.days[0].key, -51 * 7));
-  const monday = buildReadingHeatmap({}, "2024-01-01", GOAL);
+  const monday = buildReadingHeatmap({}, "2024-01-01");
   assert.equal(monday.today.row, 0);
   assert.equal(monday.columns[51].days[1].focusable, false);
-  const sunday = buildReadingHeatmap({}, "2024-01-07", GOAL);
+  const sunday = buildReadingHeatmap({}, "2024-01-07");
   assert.equal(sunday.today.row, 6);
   assert.equal(sunday.columns[51].days.every((day) => day.focusable), true);
 });
 
 test("month labels sit on the first of the month and stay three columns apart", () => {
-  const model = buildReadingHeatmap({}, "2024-03-15", GOAL);
+  const model = buildReadingHeatmap({}, "2024-03-15");
   let previous = -999;
   const labels = [];
   model.columns.forEach((column, index) => {
@@ -76,7 +74,7 @@ test("month labels sit on the first of the month and stay three columns apart", 
 test("visible weeks stay inside the 400 day horizon", () => {
   for (let delta = 0; delta < 7; delta++) {
     const todayKey = shiftDayKey("2026-09-29", delta);
-    const model = buildReadingHeatmap({}, todayKey, GOAL);
+    const model = buildReadingHeatmap({}, todayKey);
     const oldest = model.columns[0].days[0].key;
     const cutoff = shiftDayKey(todayKey, -READING_LOG_HORIZON_DAYS);
     assert.ok(oldest >= cutoff, `${oldest} fell behind ${cutoff} for ${todayKey}`);
@@ -101,7 +99,7 @@ test("prune keeps 400 days, drops 401 days and keys that are not dates", () => {
 });
 
 test("a reset today is an empty cell and an empty log does not mount", () => {
-  const reset = buildReadingHeatmap({ "2024-01-03": 0 }, "2024-01-03", GOAL);
+  const reset = buildReadingHeatmap({ "2024-01-03": 0 }, "2024-01-03");
   assert.equal(reset.active, false);
   assert.equal(reset.today.level, 0);
   const { document } = new JSDOM("<!doctype html><body></body>").window;
@@ -115,7 +113,7 @@ test("the detail line uses the time formatter and cells carry no tooltip", () =>
   const model = buildReadingHeatmap({
     "2024-01-02": 4 * 60,
     "2024-01-03": 20 * 60,
-  }, "2024-01-03", GOAL);
+  }, "2024-01-03");
   const { document } = new JSDOM("<!doctype html><body></body>").window;
   const host = document.createElement("div");
   document.body.appendChild(host);
@@ -135,7 +133,7 @@ test("the detail line uses the time formatter and cells carry no tooltip", () =>
   assert.equal(root.querySelector("[title], [aria-label]"), null);
   assert.equal(root.getAttribute("tabindex"), "0");
   assert.equal(root.querySelector("[tabindex]"), null);
-  assert.ok(root.querySelector(".is-selected").classList.contains("is-3"));
+  assert.ok(root.querySelector(".is-selected").classList.contains("is-2"));
   assert.ok(root.querySelector('[data-day="2024-01-02"]').classList.contains("is-1"));
 
   root.dispatchEvent(new document.defaultView.KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
@@ -152,7 +150,7 @@ test("the detail line uses the time formatter and cells carry no tooltip", () =>
 });
 
 test("settings mode labels the grid from the statistics heading", () => {
-  const model = buildReadingHeatmap({ "2024-01-03": 60 }, "2024-01-03", GOAL);
+  const model = buildReadingHeatmap({ "2024-01-03": 60 }, "2024-01-03");
   const { document } = new JSDOM("<!doctype html><body></body>").window;
   const host = document.createElement("div");
   const root = mountReadingHeatmap(host, model, { labelledBy: "stats-heading", formatTime: () => "不到一分钟" });

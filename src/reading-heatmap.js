@@ -20,14 +20,12 @@ function mondayOnOrBefore(dayKey) {
   return shiftDayKey(dayKey, 1 - iso);
 }
 
-// 0 empty, 1 under a third of the goal, 2 under the goal, 3 at or past it.
-// A longer day stays at 3, so one long sitting cannot wash the other days out.
-export function heatLevel(seconds, goalSeconds) {
+// Fixed duration bands keep the colours comparable across days.
+export function heatLevel(seconds) {
   const sec = Math.max(0, Math.floor(Number(seconds) || 0));
-  const goal = Math.max(1, Math.floor(Number(goalSeconds) || 0));
   if (sec <= 0) return 0;
-  if (sec * 3 < goal) return 1;
-  if (sec < goal) return 2;
+  if (sec < 5 * 60) return 1;
+  if (sec < 30 * 60) return 2;
   return 3;
 }
 
@@ -42,7 +40,7 @@ export function pruneReadingLog(log, todayKey, horizonDays = READING_LOG_HORIZON
   return next;
 }
 
-export function buildReadingHeatmap(log, todayKey, goalSeconds, weeks = HEATMAP_WEEKS) {
+export function buildReadingHeatmap(log, todayKey, weeks = HEATMAP_WEEKS) {
   const source = log && typeof log === "object" ? log : {};
   const count = Math.max(1, weeks);
   const start = shiftDayKey(mondayOnOrBefore(todayKey), -(count - 1) * 7);
@@ -57,7 +55,7 @@ export function buildReadingHeatmap(log, todayKey, goalSeconds, weeks = HEATMAP_
       const future = key > todayKey;
       const raw = Number(source[key]);
       const sec = future || !Number.isFinite(raw) ? 0 : Math.max(0, Math.floor(raw));
-      const level = future ? 0 : heatLevel(sec, goalSeconds);
+      const level = future ? 0 : heatLevel(sec);
       const focusable = !future;
       if (focusable && sec > 0) active = true;
       const day = { key, sec, level, focusable };
@@ -72,7 +70,7 @@ export function buildReadingHeatmap(log, todayKey, goalSeconds, weeks = HEATMAP_
     }
     columns.push({ monthKey, days });
   }
-  today.level = heatLevel(today.sec, goalSeconds);
+  today.level = heatLevel(today.sec);
   return { todayKey, active, columns, today };
 }
 

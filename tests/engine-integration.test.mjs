@@ -289,7 +289,7 @@ test("iframe page turns stay immersive while center taps and pointer edges revea
   const calls = [];
   const view = { areaEl: main, plugin: { settings: { navMode: "click" } },
     _armImmersive: () => calls.push("chrome"), nav: dir => calls.push(dir) };
-  const attach = vm.runInNewContext(`${functionSource("beginReaderSelection")}\n${functionSource("handleAreaNavClick")}\n${functionSource("revealReaderChromeFromPage")}\n${functionSource("attachEngineChrome")}\nattachEngineChrome`, {
+  const attach = vm.runInNewContext(`${functionSource("beginReaderSelection")}\n${functionSource("handleAreaNavClick")}\n${functionSource("revealReaderChromeFromPage")}\n${functionSource("bindReadingActivity")}\n${functionSource("attachEngineChrome")}\nattachEngineChrome`, {
     readerIsPdf: () => false, selOf: () => null,
   });
   attach(view, doc);

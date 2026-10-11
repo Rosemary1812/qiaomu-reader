@@ -909,7 +909,6 @@ test("immersive reader chrome overlays the page and retracts without reserving r
   assert.match(css, /\.qiaomu-reader-top \{[^}]*position:absolute;[^}]*height:40px;[^}]*border-radius:0/s);
   assert.match(css, /\.qiaomu-reader-bot \{[^}]*position:absolute;[^}]*height:40px;[^}]*border-radius:0/s);
   assert.match(css, /\.qiaomu-reader-ibtn \{[^}]*width:36px;[^}]*height:36px;[^}]*border-radius:10px/s);
-  assert.match(css, /\.qiaomu-reader-timerbtn \{[^}]*height:36px;[^}]*border-radius:10px/s);
   assert.match(css, /\.qiaomu-reader-area \{[^}]*margin:0;[^}]*border:0;[^}]*box-shadow:none/s);
   assert.match(css, /\.qiaomu-reader-immersive \.qiaomu-reader-top \{[^}]*opacity:0;[^}]*translateY/s);
   assert.match(css, /\.qiaomu-reader-immersive \.qiaomu-reader-bot \{[^}]*opacity:0;[^}]*transform:translateY\(calc\(100% \+ 16px\)\)/s);

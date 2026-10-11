@@ -42,6 +42,7 @@ import { PDF_AI_CONTEXT_MAX_CHARS, READER_BLOCK_SELECTOR, packPdfDocumentContext
 import { getPdfTextContent } from "./pdf-text-content.js";
 import { PDF_ZOOM_DEFAULT, PDF_ZOOM_MAX, PDF_ZOOM_MIN, clampPdfZoom, pdfZoomFromWheel, pdfZoomPercent, pdfZoomShortcut, stepPdfZoom } from "./pdf-zoom.js";
 import { appendReadingNoteExcerpts, isReadingHighlightsHeading, migrateAndReplaceReadingHighlights, replaceManagedReadingHighlights } from "./reading-note.js";
+import { createReadingClock, localReadingDay } from "./reading-clock.js";
 import { buildReadingHeatmap, mountReadingHeatmap, pruneReadingLog, shiftDayKey } from "./reading-heatmap.js";
 import { cliAcpSupport, cliMeta, cliReasoningEfforts, disposeCliAiSessions, effectiveCliEffort, installCliAcp, probeCliAcp, probeCliAi, resolveAcpPath, resolveCliPath, runCliAi } from "./ai-cli.js";
 import { QIAOMU_READER_EN } from "./i18n-en.js";
@@ -129,7 +130,7 @@ const DEFAULT_READER_SESSION = {
   askNoteTitle: true, shortNoteTitles: true, defaultHlColor: "yellow",
   selectionShowLabels: false, selectionActions: null,
   bookTags: {}, navMode: "buttons",
-  timerEnabled: true, dailyGoalMin: 15, readingLog: {}, lifetimeSeconds: 0,
+  readingLog: {}, lifetimeSeconds: 0,
   // Content-first "immersive" chrome: controls overlay the page and fully
   // retract after a short idle period. The page itself never changes size.
   immersive: true, mobileTopInset: 0,
@@ -620,11 +621,7 @@ const
   FOUND_PAINT_MS = 4000,
   MAX_BOOK_COMMANDS = 60;
 // Local calendar day (YYYY-MM-DD) backing every reading-log lookup.
-const readerTodayKey = () => {
-  const fallbackKey = () => new Date().toISOString().slice(0, 10);
-  try { return window.moment ? window.moment().format("YYYY-MM-DD") : fallbackKey(); }
-  catch { return fallbackKey(); }
-};
+const readerTodayKey = () => localReadingDay(Date.now());
 
 function fmtReadTime(seconds) {
   const total = Math.max(0, Math.floor(seconds || 0));
@@ -679,7 +676,7 @@ function heatMonthLabel(dayKey) {
 function showReadingHeatmap(parent, plugin, options = {}) {
   const todayKey = readerTodayKey();
   const log = plugin.settings.readingLog || {};
-  const model = buildReadingHeatmap(log, todayKey, plugin.getGoalSeconds());
+  const model = buildReadingHeatmap(log, todayKey);
   if (!model.active) return false;
   const streak = readingStreak(log, todayKey);
   const caption = options.caption
@@ -714,97 +711,123 @@ function showReadingHeatmap(parent, plugin, options = {}) {
   });
   return true;
 }
-// Reading-time tracking. Each open reader runs one interval that accrues
-// seconds into the plugin day/lifetime logs, flushing to disk every
-// TIMER_FLUSH_TICKS ticks and once when the daily goal is first reached.
+// One clock owns the plugin log, including readers in popout windows.
 const TIMER_TICK_MS = 1000;
 const TIMER_FLUSH_TICKS = 15;
-function timerTick(reader) {
-  const plugin = reader.plugin;
-  if (!plugin.settings.timerEnabled) { pauseTimerSession(reader); return; }
-  plugin.bumpReadingTime(1);
-  reader._sessionSec = (reader._sessionSec ?? 0) + 1;
-  reader._flushAcc = (reader._flushAcc ?? 0) + 1;
-  if (reader._flushAcc >= TIMER_FLUSH_TICKS) { reader._flushAcc = 0; plugin.flushReadingTime(); }
-  updateTimerBtn(reader);
-  updateGoalBar(reader);
-  if (!reader._goalNotified && plugin.getTodaySeconds() >= plugin.getGoalSeconds()) {
-    reader._goalNotified = true;
-    plugin.flushReadingTime();
-    const goalHitNotice = qiaomuReaderTranslate("today-s-reading-goal-reached");
-    new Notice(goalHitNotice);
+function readingTracker(plugin) {
+  if (plugin._readingTracker) return plugin._readingTracker;
+  const readers = new Set();
+  const clock = createReadingClock({ now: () => performance.now(), wallNow: () => Date.now(),
+    onSeconds: (reader, seconds, day) => {
+      plugin.bumpReadingTime(seconds, day);
+      reader._sessionSec = (reader._sessionSec || 0) + seconds;
+    },
+  });
+  const tracker = { readers, ticks: 0, sync() {
+    const modal = plugin._openReaderModal;
+    const candidate = modal && !modal._closed && modal.contentEl.ownerDocument.hasFocus()
+      ? modal : plugin.app.workspace.activeLeaf?.view;
+    const doc = candidate?.contentEl?.ownerDocument;
+    const eligible = readers.has(candidate) && !candidate._closed && !candidate._openingBook
+      && candidate.bookHtml && !candidate._manualTimerPaused
+      && doc?.visibilityState === "visible" && doc.hasFocus();
+    const running = clock.update(eligible ? candidate : null, candidate?._readingActivityAt || 0);
+    let paused = false;
+    for (const reader of readers) {
+      const wasRunning = reader._running;
+      reader._running = reader === candidate && running;
+      if (wasRunning && !reader._running) paused = true;
+    }
+    if (paused) void plugin.flushReadingTime();
+  }, dispose() {
+    clock.update(null, 0);
+    window.clearInterval(tracker.interval);
+    plugin.app.workspace.offref(tracker.leafEvent);
+    for (const reader of [...readers]) stopReadingTimer(reader);
+    void plugin.flushReadingTime();
+  } };
+  tracker.interval = window.setInterval(() => {
+    tracker.sync();
+    if (++tracker.ticks % TIMER_FLUSH_TICKS === 0) void plugin.flushReadingTime();
+  }, TIMER_TICK_MS);
+  tracker.leafEvent = plugin.app.workspace.on("active-leaf-change", () => {
+    const reader = plugin.app.workspace.activeLeaf?.view;
+    tracker.sync();
+    if (readers.has(reader)) reader._readingActivityAt = performance.now();
+    tracker.sync();
+  });
+  plugin._readingTracker = tracker;
+  return tracker;
+}
+function bindReadingActivity(reader, doc, root = doc) {
+  const cleanups = reader._readingActivityCleanups ||= new Set();
+  const docs = reader._readingActivityDocs ||= new WeakSet();
+  if (docs.has(doc)) return;
+  docs.add(doc);
+  const activity = (event) => {
+    if (!event.isTrusted) return;
+    const tracker = reader.plugin._readingTracker;
+    tracker?.sync();
+    reader._readingActivityAt = performance.now();
+    tracker?.sync();
+  };
+  for (const type of ["pointerdown", "keydown", "wheel", "touchstart", "input", "scroll"]) {
+    root.addEventListener(type, activity, { capture: true, passive: true });
   }
+  const visibility = () => {
+    const tracker = reader.plugin._readingTracker;
+    tracker?.sync();
+    if (doc.visibilityState === "visible" && doc.hasFocus()) reader._readingActivityAt = performance.now();
+    tracker?.sync();
+  };
+  doc.addEventListener("visibilitychange", visibility);
+  const win = doc.defaultView;
+  win?.addEventListener("focus", visibility);
+  win?.addEventListener("blur", visibility);
+  const cleanup = () => {
+    for (const type of ["pointerdown", "keydown", "wheel", "touchstart", "input", "scroll"]) root.removeEventListener(type, activity, true);
+    doc.removeEventListener("visibilitychange", visibility);
+    win?.removeEventListener("focus", visibility);
+    win?.removeEventListener("blur", visibility);
+    win?.removeEventListener("pagehide", cleanup);
+    cleanups.delete(cleanup);
+    docs.delete(doc);
+  };
+  win?.addEventListener("pagehide", cleanup);
+  cleanups.add(cleanup);
 }
 function startTimerSession(reader) {
-  if (reader._timer || !reader.plugin.settings.timerEnabled) return;
-  reader._running = true; reader._timerStarted = true; reader._flushAcc = 0;
-  reader._timer = window.setInterval(() => timerTick(reader), TIMER_TICK_MS);
-  updateTimerBtn(reader);
+  const tracker = readingTracker(reader.plugin);
+  tracker.sync();
+  reader._manualTimerPaused = false;
+  reader._timerStarted = true;
+  reader._readingActivityAt = performance.now();
+  if (!tracker.readers.has(reader)) {
+    tracker.readers.add(reader);
+    bindReadingActivity(reader, docOf(reader.contentEl), reader.containerEl);
+  }
+  tracker.sync();
 }
 function pauseTimerSession(reader) {
-  if (reader._timer) {
-    window.clearInterval(reader._timer);
-    reader._timer = null;
-  }
-  reader._running = false;
-  reader.plugin?.flushReadingTime();
-  updateTimerBtn(reader);
+  reader.plugin._readingTracker?.sync();
+  reader._manualTimerPaused = true;
+  reader.plugin._readingTracker?.sync();
+  void reader.plugin.flushReadingTime();
 }
 function toggleTimerSession(reader) {
-  if (!reader.plugin.settings.timerEnabled) {
-    new Notice(qiaomuReaderTranslate(
-      "timer-is-off-enable-it-in-reading-settings"));
-    return;
-  }
   if (reader._running) pauseTimerSession(reader);
   else startTimerSession(reader);
 }
 function stopReadingTimer(reader) {
-  pauseTimerSession(reader);
-}
-function resetTimerSession(reader) {
-  if (!reader.plugin.settings.timerEnabled) return;
-  pauseTimerSession(reader);
-  reader.plugin.resetTodaySeconds();
-  reader.plugin.flushReadingTime();
-  reader._goalNotified = false;
-  updateTimerBtn(reader);
-  updateGoalBar(reader);
-  const resetNotice = qiaomuReaderTranslate("timer-reset");
-  new Notice(resetNotice);
-}
-function updateTimerBtn(reader) {
-  const btn = reader.timerBtnEl;
-  if (!btn) return;
-  const plugin = reader.plugin;
-  const sessionActive = reader._running || reader._timerStarted;
-  if (!plugin.settings.timerEnabled || !sessionActive) { btn.addClass("qiaomu-reader-hidden"); return; }
-  btn.removeClass("qiaomu-reader-hidden");
-  const remain = Math.max(0, plugin.getGoalSeconds() - plugin.getTodaySeconds());
-  const goalDone = remain <= 0;
-  const mm = Math.floor(remain / 60);
-  const ss = remain % 60;
-  btn.classList.toggle("qiaomu-reader-timer-run", !!reader._running && !goalDone);
-  btn.classList.toggle("qiaomu-reader-timer-done", goalDone);
-  if (reader.timerIconEl) svgIcon(reader.timerIconEl, goalDone ? "check" : (reader._running ? "pause" : "play"));
-  if (reader.timerLabelEl) reader.timerLabelEl.setText(`${mm}:${String(ss).padStart(2, "0")}`);
-}
-function updateGoalBar(reader) {
-  const wrap = reader.goalWrapEl;
-  if (!wrap) return;
-  const plugin = reader.plugin;
-  if (!plugin.settings.timerEnabled) { wrap.addClass("qiaomu-reader-hidden"); return; }
-  wrap.removeClass("qiaomu-reader-hidden");
-  const done = plugin.getTodaySeconds();
-  const goal = plugin.getGoalSeconds();
-  const pct = Math.min(100, Math.round((done / goal) * 100));
-  const readMinutes = Math.floor(done / 60);
-  reader.goalFillEl.style.width = pct + "%";
-  const goalReached = done >= goal;
-  wrap.classList.toggle("qiaomu-reader-goal-done", goalReached);
-  reader.goalTxtEl.setText(goalReached
-    ? qiaomuReaderTranslate("goal-reached-0-min-today", (readMinutes))
-    : qiaomuReaderTranslate("0-of-1-min-2", (readMinutes), (plugin.settings.dailyGoalMin || 15), (pct)));
+  const tracker = reader.plugin._readingTracker;
+  tracker?.sync();
+  tracker?.readers.delete(reader);
+  tracker?.sync();
+  for (const cleanup of reader._readingActivityCleanups || []) cleanup();
+  reader._readingActivityCleanups = new Set();
+  reader._running = false;
+  reader._timerStarted = false;
+  void reader.plugin.flushReadingTime();
 }
 function handleAreaNavClick(view, e) {
   if (view._dismissSelectionClick) {
@@ -846,6 +869,7 @@ function revealReaderChromeFromPage(view, e) {
 // iframe events do not bubble to the host's immersive chrome or tap zones.
 // Convert section coordinates before reusing the reader's navigation rules.
 function attachEngineChrome(view, doc, index) {
+  bindReadingActivity(view, doc);
   doc.addEventListener("pointerdown", () => view._englishCardDismiss?.(), true);
   if (view.file?.extension === "epub") {
     doc.addEventListener("dblclick", () => {
@@ -963,23 +987,6 @@ function buildReaderTopBar(view, opts) {
   view.titleEl = bar.createDiv("qiaomu-reader-top-title");
   setReaderTitle(view.titleEl, opts.title);
   return bar.createDiv("qiaomu-reader-top-right");
-}
-
-// Timer pill with its inline reset affordance; identical on both hosts.
-function buildReaderTimerButton(tray, view) {
-  view.timerBtnEl = tray.createEl("button", { cls: "qiaomu-reader-timerbtn", attr: { type: "button" } });
-  view.timerIconEl = view.timerBtnEl.createDiv("qiaomu-reader-timer-ic");
-  view.timerLabelEl = view.timerBtnEl.createDiv("qiaomu-reader-timer-label");
-  view.timerResetEl = view.timerBtnEl.createDiv("qiaomu-reader-timer-reset");
-  svgIcon(view.timerResetEl, "rotate-ccw");
-  view.timerResetEl.setAttribute("aria-label", qiaomuReaderTranslate("reset-timer"));
-  view.timerResetEl.addEventListener("click", (ev) => {
-    ev.stopPropagation();
-    resetTimerSession(view);
-  });
-  view.timerBtnEl.setAttribute("aria-label", qiaomuReaderTranslate("timer-time-left-to-the-goal-start-pause"));
-  view.timerBtnEl.addEventListener("click", () => toggleTimerSession(view));
-  updateTimerBtn(view);
 }
 
 // Compact overflow button; the host decides which entries the menu carries.
@@ -2102,6 +2109,7 @@ const QiaomuBookReader = class extends Plugin {
   }
   onunload() {
     this._unloading = true;
+    this._readingTracker?.dispose();
     this._aiQuoteJumpController?.abort();
     disposeReaderFonts(this);
     disposeCliAiSessions();
@@ -2252,6 +2260,8 @@ const QiaomuBookReader = class extends Plugin {
   }
   _mergeDefaultSettings(saved) {
     this.settings = { ...DEFAULT, ...(saved?.settings ?? {}) };
+    delete this.settings.dailyGoalMin;
+    delete this.settings.timerEnabled;
     this.settings.aiCliPaths = { ...(this.settings.aiCliPaths || {}) };
     this.settings.aiAcpPaths = { ...(this.settings.aiAcpPaths || {}) };
     this.settings.calibreImports = { ...(this.settings.calibreImports || {}) };
@@ -2484,14 +2494,15 @@ const QiaomuBookReader = class extends Plugin {
     return this._thumbSaveChain;
   }
   _todayKey() { return readerTodayKey(); }
-  bumpReadingTime(sec) {
+  bumpReadingTime(sec, day = this._todayKey()) {
     const s = this.settings;
     if (!s.readingLog) s.readingLog = {};
-    const k = this._todayKey();
+    const k = day;
     s.readingLog[k] = (s.readingLog[k] || 0) + sec;
     s.lifetimeSeconds = (s.lifetimeSeconds || 0) + sec;
     s.readingLog = pruneReadingLog(s.readingLog, k);
     this._readingDirty = true;
+    this._readingRevision = (this._readingRevision || 0) + 1;
   }
   getTodaySeconds() {
     const s = this.settings;
@@ -2752,17 +2763,17 @@ const QiaomuBookReader = class extends Plugin {
       return `${processTemplateManually(await this.app.vault.read(tplFile), noteName)}\n\n`;
     } catch { return ""; }
   }
-  resetTodaySeconds() {
-    const s = this.settings;
-    if (!s.readingLog) s.readingLog = {};
-    s.readingLog[this._todayKey()] = 0;
-    this._readingDirty = true;
-  }
-  getGoalSeconds() { return Math.max(60, (this.settings.dailyGoalMin || 15) * 60); }
   flushReadingTime() {
-    if (!this._readingDirty) return;
-    this._readingDirty = false;
-    this._saveLocalData();
+    if (!this._readingDirty || this._readingFlush) return this._readingFlush;
+    const revision = this._readingRevision || 0;
+    this._readingFlush = this._saveLocalData().then(saved => {
+      if (saved && revision === (this._readingRevision || 0)) this._readingDirty = false;
+      return saved;
+    }).finally(() => {
+      this._readingFlush = null;
+      if (revision !== (this._readingRevision || 0)) void this.flushReadingTime();
+    });
+    return this._readingFlush;
   }
   _recordBackup(path5, prev, now) {
     if (!prev || typeof prev.percent !== "number") return;
@@ -4040,7 +4051,7 @@ function addLocationMark(view) {
 function addReadingMenuActions(menu, view) {
   menu.addItem((it) => it.setTitle(qiaomuReaderTranslate("bookmark-this-location")).setIcon("bookmark-plus").onClick(() => addLocationMark(view)));
   menu.addItem((it) => it.setTitle(qiaomuReaderTranslate("location-bookmarks")).setIcon("bookmark").onClick(() => showLocationMarks(view)));
-  if (view.plugin.settings.timerEnabled) menu.addItem((it) => it.setTitle(qiaomuReaderTranslate(view._running ? "pause-timer" : "start-timer")).setIcon(view._running ? "pause" : "play").onClick(() => toggleTimerSession(view)));
+  menu.addItem((it) => it.setTitle(qiaomuReaderTranslate(view._running ? "pause-timer" : "start-timer")).setIcon(view._running ? "pause" : "play").onClick(() => toggleTimerSession(view)));
 }
 function setReadingFocus(view, enabled) {
   if (view.app.isMobile) return;
@@ -10631,6 +10642,7 @@ const ReaderView = class extends ItemView {
     if (!isAiChat) clearAiSource(this);
   }
   async openFile(file) { // swap in another book: reset view state, show the loading card, load and render
+    stopReadingTimer(this);
     const pendingPosition = persistCurrentReaderPosition(this);
     const loadToken = this._loadCoordinator.begin();
     this._openingBook = loadToken;
@@ -10753,9 +10765,8 @@ const ReaderView = class extends ItemView {
     syncReaderAiCapability(this);
     this.buildSettPanel(); this._maybePromptBookNote(file);
     this._sessionSec = 0; this._running = false;
-    const todaySeconds = this.plugin.getTodaySeconds();
-    this._goalNotified = todaySeconds >= this.plugin.getGoalSeconds();
-    updateGoalBar(this); updateTimerBtn(this); syncOpenAiReaderContext(this);
+    syncOpenAiReaderContext(this);
+    startTimerSession(this);
   }
   async _mountEngine(result, file, saved, loadToken) {
     // foliate-js renders into its own element; the surrounding chrome (panels,
@@ -11042,7 +11053,6 @@ const ReaderView = class extends ItemView {
       onBack: () => this.plugin.openLibrary(),
     });
     createPdfZoomControls(tray, this);
-    buildReaderTimerButton(tray, this);
     // Tray buttons share an icon, accessible label and click handler.
     // The companion entry stays available before service setup.
     const trayButton = (icon, label, onClick, spec = {}) => {
@@ -11070,7 +11080,6 @@ const ReaderView = class extends ItemView {
     trayButton("sliders", "reading-settings", () => new ReadSettingsModal(this.app, this).open());
     buildReaderMoreButton(tray, this, (list, add) => {
       add("highlights", "highlighter", () => this.togglePanel("highlights"));
-      add("reset-timer", "rotate-ccw", () => resetTimerSession(this));
     });
     buildReaderPageArea(this, root, "qiaomu-reader-area");
     const navBar = root.createDiv("qiaomu-reader-bot");
@@ -11504,6 +11513,7 @@ const ReaderView = class extends ItemView {
     });
   }
   async onClose() {
+    stopReadingTimer(this);
     this._loadCoordinator.cancel();
     this._closed = true;
     this._resizeObs?.disconnect();
@@ -11515,7 +11525,6 @@ const ReaderView = class extends ItemView {
     this._releaseEngine();
     qiaomuReaderHideVeil(this);
     let _a;
-    stopReadingTimer(this);
     window.clearTimeout(this._immTimer);
     (_a = this._resizeObs) == null ? void 0 : _a.disconnect();
     window.clearTimeout(this._resizeTimer);
@@ -12656,10 +12665,7 @@ const ReaderModal = class extends Modal {
   }
   _startReadingSession() {
     this._sessionSec = 0; this._running = false;
-    const readToday = this.plugin.getTodaySeconds();
-    const goalToday = this.plugin.getGoalSeconds();
-    this._goalNotified = readToday >= goalToday;
-    updateGoalBar(this); updateTimerBtn(this);
+    startTimerSession(this);
   }
   _installResizeWatch() {
     const startWidth = this.areaEl.clientWidth;
@@ -12704,13 +12710,11 @@ const ReaderModal = class extends Modal {
       title: this.file.basename,
       onBack: () => this.close(),
     });
-    buildReaderTimerButton(tray, this);
     // Mobile keeps one compact overflow: every item is reader-specific, and the
     // title retains enough room to identify the current book.
     buildReaderMoreButton(tray, this, (list, add) => {
       add("the-book-note", "file-text", () => openOrCreateBookNoteBeside(this.plugin, this.file));
       add("highlights", "highlighter", () => this._togglePanel("highlights"));
-      add("reset-timer", "rotate-ccw", () => resetTimerSession(this));
       add("reading-settings", "sliders", () => new ReadSettingsModal(this.app, this).open());
       addPdfZoomMenuItems(list, this);
       list.addSeparator();
@@ -13331,12 +13335,13 @@ const ReaderModal = class extends Modal {
     renderHighlightPanel(this.hlPan, this, { rebuild: () => this._buildHlPanel() });
   }
   async onClose() {
+    stopReadingTimer(this);
     this._closed = true;
     this._selectionCleanup?.();
     window.clearTimeout(this._contextSettleTimer);
     clearAiSource(this);
     this._loadCoordinator.cancel();
-    await persistCurrentReaderPosition(this); stopReadingTimer(this);
+    await persistCurrentReaderPosition(this);
     window.clearTimeout(this._engineSelTimer);
     this.engine?.destroy(); this.engine = null; this._engineLocation = null;
     if (this.plugin._openReaderModal === this) { this.plugin._openReaderModal = null; }
@@ -13830,29 +13835,7 @@ const SettingsTab = class extends PluginSettingTab {
       async value => { s.columns = value; await this.plugin.saveAll(); this._repaginateOpenBooks(); });
     buildPageButtonsSetting(c, this.plugin);
     this._selectionToolbarSettings(this._settingsDisclosure(c, "selection-toolbar"));
-    const extras = c.createEl("details", { cls: "qiaomu-reader-settings-disclosure" });
-    extras.createEl("summary", { text: t("reading-goal") });
-    c = extras.createDiv("qiaomu-reader-settings-disclosure-body");
-    c.createEl("h3", { cls: "qiaomu-reader-set-h", text: t("reading-goal") });
-    this._readingToggle(c,
-      "reading-goal-timer",
-      "a-countdown-to-your-daily-goal-for-example-15-minutes-start-it-w",
-      s.timerEnabled !== false,
-      async (v) => {
-        s.timerEnabled = v; await this.plugin.saveAll();
-        const readers = this.app.workspace.getLeavesOfType(VIEW_TYPE).map(l => l.view);
-        if (this.plugin._openReaderModal) readers.push(this.plugin._openReaderModal);
-        for (const reader of readers) {
-          if (!v) pauseTimerSession(reader);
-          updateGoalBar(reader); updateTimerBtn(reader);
-        }
-      });
-    new Setting(c)
-      .setName(t("daily-goal-minutes"))
-      .setDesc(t("how-many-minutes-a-day-you-want-to-read-today-s-progress-is-in-t"))
-      .addSlider((slider) => withSliderValue(slider.setLimits(5, 120, 5).setValue(s.dailyGoalMin || 15))
-        .onChange(async (v) => { s.dailyGoalMin = v; await this.plugin.saveAll(); }));
-
+    c = this._settingsDisclosure(c, "reading-statistics");
     const statsHeading = c.createEl("h3", { cls: "qiaomu-reader-set-h", text: t("reading-statistics") });
     statsHeading.id = `qbr-reading-stats-${readingHeatLabelSeq++}`;
     this._statsCard(c, statsHeading.id);
